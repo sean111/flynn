@@ -4,15 +4,18 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 
 ## Project foundations and contracts
 
-- [ ] Create the planned `addon/`, `web/`, `desktop/`, and `bot/` application structure.
-- [ ] Define and document the versioned character/profession/recipe data contract shared by the addon, web API, and desktop app.
-  - [ ] Include integer `schemaVersion` in every SavedVariables and export payload.
-  - [ ] Specify supported `gameFlavor` values: `retail`, `classic_era`, and `classic`.
-  - [ ] Define identifiers and fields for characters, professions, recipes, outputs, reagents, quality, and reagent slots.
-- [ ] Define the `/api/v1/*` API contract; the Laravel backend is the sole owner of persistent domain state and business rules.
-- [ ] Define payload/file size limits, API rate limits, validation rules, and actionable unsupported-schema errors.
-- [ ] Select and document the relational database (PostgreSQL or MySQL), migrations strategy, and queued-job configuration.
+- [x] Create the planned `addon/`, `web/`, `desktop/`, and `bot/` application structure.
+- [x] Define and document the versioned character/profession/recipe data contract shared by the addon, web API, and desktop app.
+  - [x] Include integer `schemaVersion` in every SavedVariables and export payload.
+  - [x] Specify supported `gameFlavor` values: `retail`, `classic_era`, and `classic`.
+  - [x] Define identifiers and fields for characters, professions, recipes, outputs, reagents, quality, and reagent slots.
+- [x] Define the `/api/v1/*` API contract; the Laravel backend is the sole owner of persistent domain state and business rules.
+- [x] Define payload/file size limits, API rate limits, validation rules, and actionable unsupported-schema errors.
+- [x] Select and document the relational database (PostgreSQL or MySQL), migrations strategy, and queued-job configuration.
 - [ ] Add project-wide setup instructions and automated test/lint/build commands for each application.
+  - [x] Select a lightweight root task runner and define the cross-application command interface.
+  - [x] Document development prerequisites and each application's setup/test/lint/build commands.
+  - [ ] Verify setup and test/lint/build commands against the application manifests as they are scaffolded.
 
 ## WoW addon (`addon/`)
 
