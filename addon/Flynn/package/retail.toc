@@ -1,0 +1,16 @@
+## Interface: 120105
+## Title: Flynn
+## Notes: Retail profession capture and export
+## Author: Flynn contributors
+## Version: 1.0.0
+## SavedVariables: FlynnDB
+
+Libs\LibStub\LibStub.lua
+Libs\LibDeflate\LibDeflate.lua
+Core\Json.lua
+Core\Base64.lua
+Core\Model.lua
+Core\Adapters.lua
+Core\Scanner.lua
+Core\UI.lua
+Core\Flynn.lua

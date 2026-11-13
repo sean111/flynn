@@ -18,25 +18,29 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 
 ### Data capture and compatibility
 
-- [ ] Create a flavor-aware addon layout and package metadata for Retail, Classic Era, and Classic clients.
-- [ ] Implement a TradeSkill compatibility layer using `C_TradeSkillUI` on Retail/modern clients and `GetTradeSkill*` / `GetCraft*` on Classic clients.
-- [ ] Include Classic Era Enchanting capture through the required `GetCraft*` APIs.
-- [ ] Capture character metadata: `schemaVersion`, `gameFlavor`, `region`, `realm`, `characterName`, `guid`, `faction`, `class`, and UTC-epoch `capturedAt`.
-- [ ] Capture each profession's `SkillLineID`, current/max skill ranks, and specialization when applicable.
-- [ ] Capture known recipe `spellID`s, output `itemID`s and quantities, reagent `itemID`s and quantities, and Retail quality/reagent-slot metadata where available.
-- [ ] Store compact numeric IDs and quantities instead of localized tooltip text wherever possible.
+- [x] Create a flavor-aware addon layout and package metadata for Retail, Classic Era, and Classic clients.
+- [x] Implement the Retail/modern `C_TradeSkillUI` and legacy `GetTradeSkill*` adapters for the full verified roster, including Archaeology and sixth-slot First Aid where exposed.
+- [x] Capture recipe-less Herbalism, Fishing, Skinning, and Archaeology from roster ranks with empty recipe arrays; do not require nonexistent recipe windows.
+- [x] Add the Classic Era Enchanting `GetCraft*` adapter as an additional compatibility path; it does not limit capture to Enchanting.
+- [x] Capture character metadata: `schemaVersion`, `gameFlavor`, `region`, `realm`, `characterName`, `guid`, `faction`, `class`, and UTC-epoch `capturedAt`.
+- [x] Capture each supported profession's `SkillLineID` and current/max skill ranks.
+  - [ ] Capture specialization only when a client exposes a stable numeric specialization ID; current adapter deliberately omits unavailable/ambiguous specialization data.
+- [x] Capture known recipe `spellID`s, reported output `itemID`s and quantities, reagent `itemID`s and quantities, and Retail quality/reagent-slot metadata where available; omit unidentified values rather than fabricate them.
+- [x] Store compact numeric IDs and quantities instead of localized tooltip text wherever possible.
 
 ### Persistence, scanning, and export
 
-- [ ] Persist data in `FlynnDB` SavedVariables at `WTF/Account/<Account>/SavedVariables/Flynn.lua`.
-- [ ] Namespace saved data by `[gameFlavor][region][realm][characterName]` so characters/flavors do not overwrite each other.
-- [ ] Scan only in response to `TRADE_SKILL_SHOW`, `TRADE_SKILL_DATA_SOURCE_CHANGED`, `TRADE_SKILL_LIST_UPDATE`, and `CRAFT_SHOW`.
-- [ ] Ensure there are no `OnUpdate` polling loops, background timers, or combat event listeners; idle CPU/memory overhead must be effectively zero.
-- [ ] Abort/defer scans while `InCombatLockdown()` is true and cancel an active scan on `PLAYER_REGEN_DISABLED`.
-- [ ] Yield large scans across frames and use asynchronous item/spell cache callbacks where needed to prevent frame-time spikes.
-- [ ] Add `/flynn` and `/flynn export` commands that open a minimal read-only copy dialog.
-- [ ] Serialize, Deflate-compress, and Base64-encode exports with a version prefix such as `FLYNN1:`.
-- [ ] Tell users in-game that SavedVariables are written on `/reload`, logout, or game exit before they sync files.
+- [x] Persist schema-versioned data in `FlynnDB` SavedVariables at `WTF/Account/<Account>/SavedVariables/Flynn.lua`, with small tracking preferences in the same assignment and scan staging kept in memory.
+- [x] Namespace saved character snapshots by `[gameFlavor][region][realm][characterName]` so characters/flavors do not overwrite each other.
+- [x] Start recipe scans only from `TRADE_SKILL_SHOW`, `TRADE_SKILL_DATA_SOURCE_CHANGED`, `TRADE_SKILL_LIST_UPDATE`, and `CRAFT_SHOW`; coalesce duplicate events and cancel on both applicable close events and source changes.
+- [x] Ensure there are no `OnUpdate` polling loops, background timers, or idle combat listeners; timer yields and `PLAYER_REGEN_DISABLED` registration exist only while scans are active.
+- [x] Abort scans while `InCombatLockdown()` is true and cancel active scans on `PLAYER_REGEN_DISABLED`; stale callbacks cannot commit.
+- [x] Yield large scans across frames with a 4 ms `debugprofilestop` budget when available and a hard 10-operation batch cap, including nested recipe/reagent loops. Cache callbacks are unnecessary for captured fields because adapters use native numeric IDs and do not request cache text.
+- [x] Require a complete native player roster, certified own-data source, and matching character/window/profession/roster state before an atomic snapshot commit; never infer or append the active profession to an incomplete roster.
+- [x] Fail closed for linked/guild/NPC modern sources and uncertified legacy linked sources; refuse ambiguous legacy filters unless the explicit `All` state is confirmed.
+- [x] Add `/flynn` and `/flynn export` commands for a selectable, read-only copy dialog and `/flynn settings` tracking controls.
+- [x] Serialize, raw-DEFLATE-compress, and RFC4648 Base64-encode exports with a `FLYNN1:` prefix; enforce decoded/export/API structural limits without truncation.
+- [x] Tell users in-game that SavedVariables are written on `/reload`, logout, or game exit before syncing.
 - [ ] Test all supported client flavors, scan interruption/combat behavior, SavedVariables namespacing, and export round-tripping.
 
 ## Web application and backend (`web/`)
