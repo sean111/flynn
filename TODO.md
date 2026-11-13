@@ -47,41 +47,41 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 
 ### Accounts and authentication
 
-- [ ] Build the Laravel API and React + TypeScript web application.
-- [ ] Implement email/password registration, sign-in, and account settings.
-- [ ] Implement Discord OAuth2 account linking; persist the verified `discord_user_id` and handle.
-- [ ] Implement Laravel Sanctum token issuance/revocation for the desktop app, including login/PKCE exchange and expired/401 handling.
-- [ ] Implement scoped bearer/HMAC service authentication for the Discord bot; require acting `discord_user_id` and `discord_guild_id` on user commands.
+- [x] Build the Laravel API and React + TypeScript web application.
+- [x] Implement email/password registration, sign-in, and account settings.
+- [x] Implement Discord OAuth2 account linking; persist the verified `discord_user_id` and handle.
+- [x] Implement Laravel Sanctum token issuance/revocation for the desktop app, including login/PKCE exchange and expired/401 handling.
+- [x] Implement scoped bearer/HMAC service authentication for the Discord bot; require acting `discord_user_id` and `discord_guild_id` on user commands.
 
 ### Guilds and memberships
 
-- [ ] Implement guild creation with name, game flavor, region, realm, and optional linked `discord_guild_id`.
-- [ ] Verify linked Discord guild bot presence/admin permission.
-- [ ] Make the creator Guild Owner and support promoting/demoting Officers.
-- [ ] Support guild discovery and invite-link applications.
-- [ ] Put every new membership into `pending`; allow Owners/Officers to approve or reject applications and revoke members.
-- [ ] Enforce that only `approved` members can associate characters, appear in crafter search, or create/fulfill guild requests.
+- [x] Implement guild creation with name, game flavor, region, realm, and optional linked `discord_guild_id`.
+- [x] Verify linked Discord guild bot presence/admin permission.
+- [x] Make the creator Guild Owner and support promoting/demoting Officers.
+- [x] Support guild discovery and invite-link applications.
+- [x] Put every new membership into `pending`; allow Owners/Officers to approve or reject applications and revoke members.
+- [x] Enforce that only `approved` members can associate characters, appear in crafter search, or create/fulfill guild requests.
 
 ### Character and dump ingestion
 
-- [ ] Let users view, claim, and delete imported characters.
-- [ ] Let users assign characters to one or more approved guilds, enforcing matching flavor and region/realm rules.
-- [ ] Implement manual web upload for a `Flynn.lua` SavedVariables file and paste-in `FLYNN1:...` export strings.
-- [ ] Implement `POST /api/v1/dumps` for desktop uploads of `Flynn.lua` payloads or structured JSON with schema metadata.
-- [ ] Parse uploaded Lua with a strict deterministic parser; never execute uploaded Lua.
-- [ ] Enforce payload size limits and validate schema/version before processing.
-- [ ] Queue dump ingestion; perform idempotent character/profession/skill/recipe upserts.
-- [ ] Prune professions and recipes no longer present on re-upload and update `last_synced_at`.
-- [ ] Return clear errors for malformed files, unsupported schemas, and oversized payloads.
+- [x] Let users view, claim, and delete imported characters.
+- [x] Let users assign characters to one or more approved guilds, enforcing matching flavor and region/realm rules.
+- [x] Implement manual web upload for a `Flynn.lua` SavedVariables file and paste-in `FLYNN1:...` export strings.
+- [x] Implement `POST /api/v1/dumps` for desktop uploads of `Flynn.lua` payloads or structured JSON with schema metadata.
+- [x] Parse uploaded Lua with a strict deterministic parser; never execute uploaded Lua.
+- [x] Enforce payload size limits and validate schema/version before processing.
+- [x] Queue dump ingestion; perform idempotent character/profession/skill/recipe upserts.
+- [x] Prune professions and recipes no longer present on re-upload and update `last_synced_at`.
+- [x] Return clear errors for malformed files, unsupported schemas, and oversized payloads.
 
 ### Crafting requests and web UI
 
-- [ ] Implement the request data model: guild, requester, optional recipient character, crafter user/character, recipe, quantity, materials source (`requester`, `crafter`, `partial`), notes, and status timestamps.
-- [ ] Enforce transitions: `pending` → `accepted` / `denied`; `accepted` → `completed`; `pending` or `accepted` → `cancelled` by requester.
-- [ ] Enforce which actor may perform each transition; support optional denial reason and requester confirmation of completion.
-- [ ] Build crafter Incoming Requests views with pending/accepted/history filters and Accept, Deny, and Mark Completed actions.
-- [ ] Build requester Outgoing Requests views showing status, reagents, assigned crafter character, and Cancel action.
-- [ ] Emit a notification event for every status transition and queue Discord notifications to the counterpart.
+- [x] Implement the request data model: guild, requester, optional recipient character, crafter user/character, recipe, quantity, materials source (`requester`, `crafter`, `partial`), notes, and status timestamps.
+- [x] Enforce transitions: `pending` → `accepted` / `denied`; `accepted` → `completed`; `pending` or `accepted` → `cancelled` by requester.
+- [x] Enforce which actor may perform each transition; support optional denial reason and requester confirmation of completion.
+- [x] Build crafter Incoming Requests views with pending/accepted/history filters and Accept, Deny, and Mark Completed actions.
+- [x] Build requester Outgoing Requests views showing status, reagents, assigned crafter character, and Cancel action.
+- [x] Emit a notification event for every status transition and queue Discord notifications to the counterpart.
 
 ## Desktop companion (`desktop/`)
 
