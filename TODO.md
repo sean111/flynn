@@ -88,17 +88,23 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 
 ## Desktop companion (`desktop/`)
 
-- [ ] Build the Rust + Tauri desktop application with lightweight native UI and system tray support.
-- [ ] Require Flynn API login before enabling uploads.
-- [ ] Store API/session tokens only in the OS credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service).
-- [ ] Detect expired/401 credentials and prompt the user to authenticate again.
-- [ ] Auto-detect standard WoW installation paths on supported OSes and provide a manual folder picker.
-- [ ] Discover `Flynn.lua` under `<WoW Root>/{_retail_,_classic_era_,_classic_}/WTF/Account/*/SavedVariables/`.
-- [ ] Watch discovered files with OS filesystem events and debounce writes until reload/logout file updates settle.
-- [ ] SHA-256 hash file contents and skip uploads when a file has not changed.
-- [ ] Implement Automatic Sync on file change and a manual Upload Now action.
-- [ ] Show sync status, last upload time, characters updated, and useful network/file/authentication error diagnostics.
-- [ ] Add settings for WoW path, per-account/flavor sync toggles, auto-sync, launch on startup, minimize to tray, and logout.
+- [x] Build the Rust + Tauri desktop application with lightweight native UI and system tray support.
+- [x] Require Flynn API login before enabling uploads.
+- [x] Store API/session tokens only in the OS credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service); no plaintext fallback.
+- [x] Detect expired/401 credentials and prompt the user to authenticate again.
+- [x] Auto-detect standard WoW installation paths on supported OSes and provide a manual folder picker.
+- [x] Discover `Flynn.lua` under `<WoW Root>/{_retail_,_classic_era_,_classic_}/WTF/Account/*/SavedVariables/`.
+- [x] Watch discovered files with OS filesystem events and debounce writes until reload/logout file updates settle.
+- [x] SHA-256 hash file contents and skip uploads when a file has not changed.
+- [x] Implement Automatic Sync on file change and a manual Upload Now action.
+- [x] Show sync status, last upload time, characters updated, and useful network/file/authentication error diagnostics.
+- [x] Add settings for WoW path, per-account/flavor sync toggles, auto-sync, launch on startup, minimize to tray, and logout.
+- [x] Fence stale 401/session completions with session generations; logout, API changes, and account switches cancel or fence in-flight uploads and status polling. Revalidate expired-token signed-out status after discovery and ignore out-of-order frontend status responses.
+- [x] Persist upload submission attempts before POST; block automatic repost after an unknown outcome (including restart/reconcile), surface persisted ambiguous/failed attempts independently of activity history only while their exact hash matches an enabled current file, and require an explicit duplicate-risk confirmation to retry. Keep superseded attempts as duplicate-risk history without stale retry actions; test the explicit retry command against a mock server and ensure no request occurs before confirmation. Persist pre-POST file/stability failures to avoid endlessly reconciling unchanged content. This is not exactly-once delivery.
+- [x] Resume accepted asynchronous ingestion checks by persisted API/user/dump ID even after the source SavedVariables file is deleted or renamed; retain its path only for display/bookkeeping.
+- [x] Serialize config mutations from snapshot through commit for settings, scope, launch-at-login, authentication, and upload state using the same session/config mutation fence; keep lock order mutation → config, release config before disk snapshot, and avoid holding the fence for status polling/network I/O.
+- [x] Serialize config snapshots and writes so concurrent settings, scope, autostart, pending-dump, and submission-attempt updates cannot replace newer persisted state with an older snapshot; fail closed and preserve the old session if cross-server credential cleanup fails.
+- [ ] Read uploads via a root-anchored, no-follow traversal on macOS/Linux and handle-relative reparse-safe traversal on Windows; reject swapped account/SavedVariables/file links. Windows implementation and target test are present, but Windows runtime verification is still required before acceptance.
 - [ ] Test file discovery, debounce behavior, unchanged-file suppression, secure token storage, and API upload/error flows on supported OSes.
 
 ## Discord bot (`bot/`)

@@ -14,6 +14,7 @@ web-setup:
     cd web && npm ci
 
 desktop-setup:
+    cd desktop && npm ci
     cd desktop && cargo fetch --locked
 
 bot-setup:
@@ -30,6 +31,9 @@ web-test:
 
 desktop-test:
     cd desktop && cargo test --workspace
+    cd desktop && cargo build --workspace
+    cd desktop && npm test
+    cd desktop && npm run build
 
 bot-test:
     cd bot && cargo test --workspace
@@ -46,6 +50,7 @@ web-lint:
 desktop-lint:
     cd desktop && cargo fmt --all -- --check
     cd desktop && cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cd desktop && npm run build
 
 bot-lint:
     cd bot && cargo fmt --all -- --check
@@ -61,7 +66,7 @@ web-build:
     cd web && npm run build
 
 desktop-build:
-    cd desktop && cargo build --workspace --release
+    cd desktop && npm run tauri build
 
 bot-build:
     cd bot && cargo build --workspace --release
