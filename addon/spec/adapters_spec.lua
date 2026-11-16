@@ -64,6 +64,8 @@ describe('profession API adapters', function()
   end)
 
   it('reads modern recipe, output, required reagent choices and quality numerically', function()
+    _G.WOW_PROJECT_ID, _G.WOW_PROJECT_CAMELOT = 18, 18
+    assert.are.equal('forever', NS.Model.getFlavor())
     _G.C_TradeSkillUI = {
       GetBaseProfessionInfo = function() return { professionID = 171, skillLevel = 100, maxSkillLevel = 100 } end,
       IsTradeSkillLinked = function() return false end,

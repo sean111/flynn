@@ -31,7 +31,7 @@ php artisan queue:work database --queue=notifications,default --sleep=1 --tries=
 php artisan schedule:work
 ```
 
-Trusted offline catalog snapshots can be imported with `php artisan flynn:catalog-import /path/to/catalog.json --game-flavor=retail`. The JSON document has `professions`, `spells`, and `items` arrays; unknown IDs still display as `Recipe #<spellID>` or `Item #<itemID>`.
+Offline catalog snapshots can be imported with `php artisan flynn:catalog-import /path/to/catalog.json --game-flavor=retail` (the supported values are `retail`, `classic_era`, `classic`, and `forever`). The JSON document has `professions`, `spells`, and `items` arrays; rows are assigned to the operator-supplied flavor, but the importer cannot independently verify source provenance. Only import a verified WoW Forever-specific snapshot with `--game-flavor=forever`. No verified Forever catalog source/snapshot is currently supplied; unknown IDs still display as `Recipe #<spellID>` or `Item #<itemID>` rather than borrowing another flavor's metadata.
 
 Quality checks (also wired to the root task runner):
 

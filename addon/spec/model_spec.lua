@@ -37,6 +37,11 @@ describe('SavedVariables model', function()
     assert.are.equal('classic_era', NS.Model.getFlavor())
     _G.WOW_PROJECT_ID, _G.WOW_PROJECT_BURNING_CRUSADE_CLASSIC = 5, 5
     assert.are.equal('classic', NS.Model.getFlavor())
+    _G.WOW_PROJECT_CAMELOT = 18
+    _G.WOW_PROJECT_ID = 18
+    assert.are.equal('forever', NS.Model.getFlavor())
+    _G.WOW_PROJECT_ID = 2
+    assert.are.equal('classic_era', NS.Model.getFlavor())
   end)
 
   it('isolates same-named characters across flavors, regions, realms and characters', function()
@@ -47,6 +52,12 @@ describe('SavedVariables model', function()
     assert.are.equal(a, NS.Model.getCharacter(db, 'retail', 'us', 'Area 52', 'Same'))
     assert.are.equal(b, NS.Model.getCharacter(db, 'classic_era', 'eu', 'Other Realm', 'Same'))
     assert.is_nil(NS.Model.getCharacter(db, 'classic', 'us', 'Area 52', 'Same'))
+    local forever = helpers.character('Same')
+    forever.gameFlavor = 'forever'
+    NS.Model.setCharacter(db, forever)
+    assert.are.equal(forever, NS.Model.getCharacter(db, 'forever', 'us', 'Area 52', 'Same'))
+    assert.are.equal(a, NS.Model.getCharacter(db, 'retail', 'us', 'Area 52', 'Same'))
+    assert.is_true(NS.Model.validateExport({ forever = { us = { ['Area 52'] = { Same = forever } } } }))
   end)
 
   it('keeps new/partial scans out of exports and commits a full roster atomically', function()

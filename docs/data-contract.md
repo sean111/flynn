@@ -19,8 +19,9 @@ Supported `gameFlavor` values are:
 | Value | WoW client |
 | --- | --- |
 | `retail` | Retail (`_retail_`) |
-| `classic_era` | Classic Era / Forever (`_classic_era_`) |
+| `classic_era` | Classic Era (`_classic_era_`) |
 | `classic` | Classic Progression / Anniversary (`_classic_`) |
+| `forever` | WoW Forever / Camelot (`_forever_`) |
 
 `region` is the lowercase WoW region code: `us`, `eu`, `kr`, `tw`, or `cn`. Realm and character-name keys use the WoW-provided names without locale-independent transliteration. They are case-sensitive and must match their corresponding record fields.
 
@@ -30,7 +31,7 @@ Supported `gameFlavor` values are:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `gameFlavor` | string | One of the three supported flavor values above. |
+| `gameFlavor` | string | One of the four supported flavor values above. |
 | `region` | string | Lowercase region code. |
 | `realm` | string | WoW-provided realm name. |
 | `characterName` | string | WoW character name. |
@@ -149,4 +150,6 @@ This is the JSON-equivalent document shape. WoW persists the same table data as 
 }
 ```
 
-Classic clients, including Classic Era Enchanting, use the same profession/recipe/output/reagent records. They omit Retail-only `quality` and `reagentSlots` when those details are not available.
+Classic clients, including Classic Era Enchanting, use the same profession/recipe/output/reagent records and omit `quality` and `reagentSlots` when the legacy APIs do not expose those details. WoW Forever uses the modern `C_TradeSkillUI` capture path and the same schema, preserving structured quality and reagent-slot metadata when its APIs expose them. The Forever namespace remains independent of Retail and Classic Era.
+
+No verified WoW Forever catalog snapshot/source is currently supplied with Flynn. Catalog import assigns rows to the flavor supplied by the operator; it does not independently establish a snapshot's provenance. Only import a verified Forever-specific snapshot as `forever`. Until one is available, recipe/item labels use `Recipe #<spellID>` and `Item #<itemID>` fallbacks. Never import or reuse Retail or Classic Era catalog records as Forever data.

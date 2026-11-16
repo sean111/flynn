@@ -21,17 +21,18 @@ if (!is_string($json)) {
     exit(1);
 }
 $document = json_decode($json, true, 32, JSON_THROW_ON_ERROR);
-if (($document['schemaVersion'] ?? null) !== 1 || count($document['characters'] ?? []) !== 2) {
+if (($document['schemaVersion'] ?? null) !== 1 || count($document['characters'] ?? []) !== 3) {
     fwrite(STDERR, "schema or character count mismatch\n");
     exit(1);
 }
-if (!isset($document['characters']['retail']['us']['Area 52']['Mérida']) || !isset($document['characters']['classic_era']['eu']['Auberdine']['Étoile'])) {
+if (!isset($document['characters']['retail']['us']['Area 52']['Mérida']) || !isset($document['characters']['classic_era']['eu']['Auberdine']['Étoile']) || !isset($document['characters']['forever']['us']['Camelot']['Anvil'])) {
     fwrite(STDERR, "UTF-8 character namespace mismatch\n");
     exit(1);
 }
 if ($document['characters']['retail']['us']['Area 52']['Mérida']['professions'] !== [] ||
-    $document['characters']['classic_era']['eu']['Auberdine']['Étoile']['professions'][0]['recipes'][0]['outputs'] !== []) {
-    fwrite(STDERR, "empty arrays were not preserved\n");
+    $document['characters']['classic_era']['eu']['Auberdine']['Étoile']['professions'][0]['recipes'][0]['outputs'] !== [] ||
+    $document['characters']['forever']['us']['Camelot']['Anvil']['professions'][0]['recipes'][0]['outputs'][0]['itemID'] !== 5001) {
+    fwrite(STDERR, "export fixture records were not preserved\n");
     exit(1);
 }
 echo "PHP gzinflate/JSON export compatibility passed\n";

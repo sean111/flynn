@@ -1827,10 +1827,7 @@ async fn set_sync_scope(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<DesktopStatus, String> {
-    if !["retail", "classic_era", "classic"].contains(&flavor.as_str())
-        || account.is_empty()
-        || account.len() > 128
-    {
+    if !is_supported_flavor(&flavor) || account.is_empty() || account.len() > 128 {
         return Err("Invalid World of Warcraft account/flavor selection.".into());
     }
     let mutation = state.session_mutation.lock().await;
@@ -1851,12 +1848,19 @@ async fn set_sync_scope_config(
     set_sync_scope_config_locked(state, flavor, account, enabled).await
 }
 
+fn is_supported_flavor(flavor: &str) -> bool {
+    ["retail", "classic_era", "classic", "forever"].contains(&flavor)
+}
+
 async fn set_sync_scope_config_locked(
     state: &AppState,
     flavor: &str,
     account: &str,
     enabled: bool,
 ) -> Result<(), String> {
+    if !is_supported_flavor(flavor) {
+        return Err("Invalid World of Warcraft account/flavor selection.".into());
+    }
     let flavor_dir = format!("_{flavor}_");
     let key = discovery::scope_key(&flavor_dir, account);
     {
@@ -3779,6 +3783,11 @@ mod tests {
             sender,
             Arc::new(MockCredentialStore::default()),
         ));
+        assert!(
+            set_sync_scope_config(&state, "unsupported", "test-account", false)
+                .await
+                .is_err()
+        );
         let (snapshot_tx, snapshot_rx) = tokio::sync::oneshot::channel();
         let (continue_tx, continue_rx) = tokio::sync::oneshot::channel();
         let updating_state = state.clone();
@@ -3818,6 +3827,9 @@ mod tests {
         update.await.unwrap().unwrap();
         scope.await.unwrap().unwrap();
         launch.await.unwrap().unwrap();
+        set_sync_scope_config(&state, "forever", "camelot-account", false)
+            .await
+            .unwrap();
         let (sender, _receiver) = mpsc::unbounded_channel();
         let persisted = AppState::load(
             config_path,
@@ -3830,6 +3842,7 @@ mod tests {
             config.disabled_scopes.contains("_retail_/test-account"),
             "scope update should not be overwritten by the settings snapshot"
         );
+        assert!(config.disabled_scopes.contains("_forever_/camelot-account"));
         assert!(config.launch_at_login, "launch setting should be retained");
     }
 

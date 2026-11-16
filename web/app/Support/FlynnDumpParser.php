@@ -143,7 +143,7 @@ final class FlynnDumpParser
 
         $recipesTotal = 0;
         foreach ($characters as $flavor => $regions) {
-            $this->assertOneOf($flavor, ['retail', 'classic_era', 'classic'], 'characters.gameFlavor');
+            $this->assertOneOf($flavor, ['retail', 'classic_era', 'classic', 'forever'], 'characters.gameFlavor');
             if (! is_array($regions) || $regions === []) {
                 $this->invalid('characters: flavor entries must contain region maps.');
             }

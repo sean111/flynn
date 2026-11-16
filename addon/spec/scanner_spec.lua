@@ -54,6 +54,30 @@ describe('event-driven scanner lifecycle', function()
     assert.is_true(NS.Model.isUploadable(NS.database, NS.Model.getCharacterIdentity()))
   end)
 
+  it('safely skips the unavailable legacy CRAFT_SHOW event on modern clients', function()
+    _G.C_EventUtils = { IsEventValid = function(event) return event ~= 'CRAFT_SHOW' end }
+    NS.Scanner.initialize()
+    assert.is_nil(frame.events.CRAFT_SHOW)
+    assert.is_true(frame.events.TRADE_SKILL_SHOW)
+  end)
+
+  it('catches registration failure when event-validity metadata is unavailable', function()
+    _G.C_EventUtils = nil
+    local createFrame = _G.CreateFrame
+    _G.CreateFrame = function(...)
+      local object = createFrame(...)
+      local registerEvent = object.RegisterEvent
+      function object:RegisterEvent(event)
+        if event == 'CRAFT_SHOW' then error('unknown event') end
+        return registerEvent(self, event)
+      end
+      return object
+    end
+    assert.has_no.errors(function() NS.Scanner.initialize() end)
+    assert.is_nil(frame.events.CRAFT_SHOW)
+    assert.is_true(frame.events.TRADE_SKILL_SHOW)
+  end)
+
   it('creates a complete snapshot at login when the verified roster contains only recipe-less lines', function()
     roster = {
       { skillLineID = 182, currentSkill = 50, maxSkill = 75, name = 'Herbalism', requiresRecipeScan = false },

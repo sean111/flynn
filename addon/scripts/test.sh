@@ -19,12 +19,13 @@ trap 'rm -f "$tmp"' EXIT HUP INT TERM
 luajit addon/scripts/create-export-fixture.lua "$tmp"
 if command -v php >/dev/null 2>&1; then php addon/scripts/verify-export.php "$tmp"; else echo 'PHP not found; skipped cross-runtime gzinflate test.'; fi
 
-for flavor in retail classic_era classic; do
+for flavor in retail classic_era classic forever; do
   destination="$root/addon/.test-package/$flavor"
   addon/scripts/package.sh "$flavor" "$destination" >/dev/null
   test -f "$destination/Flynn/Flynn.toc"
   test -f "$destination/Flynn/Core/Flynn.lua"
   test ! -d "$destination/Flynn/spec"
+  if [ "$flavor" = forever ]; then grep -q '^## Interface: 16001$' "$destination/Flynn/Flynn.toc"; fi
 done
 rm -rf addon/.test-package
 echo 'Addon package smoke checks passed.'

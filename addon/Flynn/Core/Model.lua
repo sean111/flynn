@@ -2,7 +2,7 @@ local _, NS = ...
 NS = NS or _G.FlynnTestNamespace
 
 local Model = { SCHEMA_VERSION = 1, stagedProfessions = {} }
-local validFlavors = { retail = true, classic_era = true, classic = true }
+local validFlavors = { retail = true, classic_era = true, classic = true, forever = true }
 local validRegions = { us = true, eu = true, kr = true, tw = true, cn = true }
 
 function Model.ensureDatabase(database)
@@ -189,6 +189,9 @@ end
 function Model.getFlavor()
   local project = _G.WOW_PROJECT_ID
   if project and project == _G.WOW_PROJECT_MAINLINE then return 'retail' end
+  -- WoW Forever (Camelot) is a modern C_TradeSkillUI client, but owns a
+  -- separate SavedVariables/catalog namespace from Retail.
+  if project and ((_G.WOW_PROJECT_CAMELOT and project == _G.WOW_PROJECT_CAMELOT) or project == 18) then return 'forever' end
   if project and ((_G.WOW_PROJECT_CLASSIC_ERA and project == _G.WOW_PROJECT_CLASSIC_ERA) or (_G.WOW_PROJECT_CLASSIC and project == _G.WOW_PROJECT_CLASSIC)) then return 'classic_era' end
   if project and project ~= _G.WOW_PROJECT_MAINLINE then return 'classic' end
   if _G.C_TradeSkillUI and _G.C_TradeSkillUI.GetBaseProfessionInfo then return 'retail' end

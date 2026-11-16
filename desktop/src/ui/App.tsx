@@ -12,7 +12,7 @@ type SubmissionAttempt = { file: string; state: 'ambiguous' | 'failed'; message:
 type Status = { authenticated: boolean; account?: { name: string; email: string }; apiBaseUrl: string; wowRoot?: string; autoSync: boolean; minimizeToTray: boolean; launchAtLogin: boolean; detectedInstallations: string[]; files: DumpFile[]; activity: Activity[]; submissionAttempts: SubmissionAttempt[]; lastUploadAt?: string; durabilityWarning?: string; credentialCleanupWarning?: string };
 type Outcome = { path: string; status: string; message: string; partial: boolean };
 
-const flavors: Record<string, string> = { retail: 'Retail', classic_era: 'Classic Era', classic: 'Classic Progression' };
+const flavors: Record<string, string> = { retail: 'Retail', classic_era: 'Classic Era', classic: 'Classic Progression', forever: 'WoW Forever' };
 const friendlyDate = (value?: string) => value ? new Date(Number(value) * 1000).toLocaleString() : 'Not synced yet';
 const size = (bytes: number) => bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
 

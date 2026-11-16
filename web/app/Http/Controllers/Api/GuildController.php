@@ -34,7 +34,7 @@ final class GuildController extends ApiController
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:100'],
-            'gameFlavor' => ['required', 'in:retail,classic_era,classic'],
+            'gameFlavor' => ['required', 'in:retail,classic_era,classic,forever'],
             'region' => ['required', 'in:us,eu,kr,tw,cn'],
             'realm' => ['required', 'string', 'max:128'],
             'discordGuildID' => ['nullable', 'regex:/^\d{17,20}$/'],

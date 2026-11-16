@@ -13,6 +13,18 @@ final class GuildWorkflowTest extends TestCase
 {
     use LazilyRefreshDatabase;
 
+    public function test_forever_is_a_valid_distinct_guild_flavor(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+
+        $guild = $this->postJson('/api/v1/guilds', [
+            'name' => 'Camelot Crafters', 'gameFlavor' => 'forever', 'region' => 'us', 'realm' => 'Camelot',
+        ])->assertCreated()->assertJsonPath('data.gameFlavor', 'forever')->json('data');
+
+        $this->assertDatabaseHas('guilds', ['id' => $guild['id'], 'game_flavor' => 'forever']);
+    }
+
     public function test_invite_applications_start_pending_and_owners_review_and_manage_officers(): void
     {
         $owner = User::factory()->create();

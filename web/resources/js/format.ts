@@ -1,5 +1,5 @@
 export function formatFlavorName(flavor: string): string {
-    return ({ retail: 'Retail', classic_era: 'Classic Era', classic: 'Classic Progression' } as Record<string, string>)[flavor] ?? flavor.replaceAll('_', ' ');
+    return ({ retail: 'Retail', classic_era: 'Classic Era', classic: 'Classic Progression', forever: 'WoW Forever' } as Record<string, string>)[flavor] ?? flavor.replaceAll('_', ' ');
 }
 
 export function fallbackRecipeName(spellID: number): string {

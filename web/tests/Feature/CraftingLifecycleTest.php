@@ -16,6 +16,37 @@ final class CraftingLifecycleTest extends TestCase
 {
     use LazilyRefreshDatabase;
 
+    public function test_forever_recipe_search_does_not_include_retail_crafters(): void
+    {
+        $owner = User::factory()->create();
+        $retailCrafter = User::factory()->create();
+        $foreverCrafter = User::factory()->create();
+        $guildIds = [];
+
+        foreach ([['retail', $retailCrafter, 'Retailsmith'], ['forever', $foreverCrafter, 'Camelotsmith']] as [$flavor, $crafter, $characterName]) {
+            Sanctum::actingAs($owner);
+            $guild = $this->postJson('/api/v1/guilds', [
+                'name' => ucfirst($flavor).' Search Hall', 'gameFlavor' => $flavor, 'region' => 'us', 'realm' => 'Area 52',
+            ])->assertCreated()->json('data');
+            $guildIds[$flavor] = $guild['id'];
+
+            Sanctum::actingAs($crafter);
+            $application = $this->postJson('/api/v1/guilds/'.$guild['id'].'/applications')->assertCreated()->json('data');
+            $this->createEligibleCrafter($crafter, $guild['id'], $characterName, $flavor);
+
+            Sanctum::actingAs($owner);
+            $this->postJson('/api/v1/guilds/'.$guild['id'].'/members/'.$application['id'].'/approve')->assertOk();
+        }
+
+        Sanctum::actingAs($owner);
+        $this->getJson('/api/v1/guilds/'.$guildIds['forever'].'/recipes')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.crafters.0.characterName', 'Camelotsmith');
+        $this->getJson('/api/v1/guilds/'.$guildIds['retail'].'/recipes')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.crafters.0.characterName', 'Retailsmith');
+    }
+
     public function test_approved_guild_members_can_route_and_complete_a_crafting_request(): void
     {
         $requester = User::factory()->create();
@@ -334,13 +365,13 @@ final class CraftingLifecycleTest extends TestCase
         return $ids;
     }
 
-    private function createEligibleCrafter(User $crafter, string $guildId, string $characterName = 'Smithy'): string
+    private function createEligibleCrafter(User $crafter, string $guildId, string $characterName = 'Smithy', string $flavor = 'retail'): string
     {
         $characterId = (string) Str::uuid();
         $professionId = (string) Str::uuid();
         $recipeId = (string) Str::uuid();
         DB::table('characters')->insert([
-            'id' => $characterId, 'owner_id' => $crafter->id, 'game_flavor' => 'retail', 'region' => 'us', 'realm' => 'Area 52',
+            'id' => $characterId, 'owner_id' => $crafter->id, 'game_flavor' => $flavor, 'region' => 'us', 'realm' => 'Area 52',
             'character_name' => $characterName, 'guid' => 'Player-1234-'.strtoupper($characterName), 'faction' => 'alliance', 'class' => 'WARRIOR',
             'captured_at' => 1794528000, 'last_synced_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -350,7 +381,7 @@ final class CraftingLifecycleTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table('recipes')->insert([
-            'id' => $recipeId, 'game_flavor' => 'retail', 'profession_id' => $professionId, 'spell_id' => 10001,
+            'id' => $recipeId, 'game_flavor' => $flavor, 'profession_id' => $professionId, 'spell_id' => 10001,
             'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table('recipe_outputs')->insert(['id' => (string) Str::uuid(), 'recipe_id' => $recipeId, 'item_id' => 9002, 'quantity' => 1, 'created_at' => now(), 'updated_at' => now()]);

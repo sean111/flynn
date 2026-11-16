@@ -19,6 +19,13 @@ local doc = {
         { spellID = 7418, outputs = {}, reagents = { { itemID = 10940, quantity = 2 } } },
       } } },
     } } } },
+    forever = { us = { Camelot = { ['Anvil'] = {
+      gameFlavor = 'forever', region = 'us', realm = 'Camelot', characterName = 'Anvil',
+      guid = 'Player-18-ghi', faction = 'alliance', class = 'WARRIOR', capturedAt = 1760000002,
+      professions = { { skillLineID = 164, currentSkill = 50, maxSkill = 100, recipes = {
+        { spellID = 12345, outputs = { { itemID = 5001, quantity = 1 } }, reagents = {} },
+      } } },
+    } } } },
   },
 }
 local json = assert(NS.Json.encode(doc))

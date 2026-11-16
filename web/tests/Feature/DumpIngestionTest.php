@@ -17,6 +17,26 @@ final class DumpIngestionTest extends TestCase
 {
     use LazilyRefreshDatabase;
 
+    public function test_forever_dump_ingestion_keeps_the_forever_flavor_namespace(): void
+    {
+        Storage::fake('local');
+        $uploader = User::factory()->create();
+        $document = ['schemaVersion' => 1, 'characters' => ['forever' => ['us' => ['Camelot' => ['Anvil' => [
+            'gameFlavor' => 'forever', 'region' => 'us', 'realm' => 'Camelot', 'characterName' => 'Anvil',
+            'guid' => 'Player-18-ANVIL', 'faction' => 'alliance', 'class' => 'WARRIOR', 'capturedAt' => 1794528000,
+            'professions' => [['skillLineID' => 164, 'currentSkill' => 50, 'maxSkill' => 100, 'recipes' => []]],
+        ]]]]]];
+        $dumpId = (string) Str::uuid();
+        $path = 'private/dumps/'.$dumpId.'.json';
+        Storage::disk('local')->put($path, json_encode($document, JSON_THROW_ON_ERROR));
+        DB::table('dumps')->insert(['id' => $dumpId, 'uploader_id' => $uploader->id, 'staging_path' => $path, 'checksum' => hash('sha256', Storage::disk('local')->get($path)), 'created_at' => now(), 'updated_at' => now()]);
+
+        (new IngestDump($dumpId, $path, 'structuredJson'))->handle(app(FlynnDumpParser::class));
+
+        $this->assertDatabaseHas('characters', ['game_flavor' => 'forever', 'region' => 'us', 'realm' => 'Camelot', 'character_name' => 'Anvil']);
+        $this->assertDatabaseMissing('characters', ['game_flavor' => 'retail', 'character_name' => 'Anvil']);
+    }
+
     public function test_structured_dump_is_staged_then_upserted_with_claim_grants_and_ownership_conflicts(): void
     {
         Storage::fake('local');

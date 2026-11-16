@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const FLAVORS: [&str; 3] = ["_retail_", "_classic_era_", "_classic_"];
+pub const FLAVORS: [&str; 4] = ["_retail_", "_classic_era_", "_classic_", "_forever_"];
 pub const MAX_UPLOAD_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,6 +100,17 @@ pub fn discover_files(root: &Path, disabled_scopes: &BTreeSet<String>) -> Vec<Du
                 continue;
             };
             if !canonical_candidate.starts_with(&root) {
+                continue;
+            }
+            let Some(canonical_flavor) = canonical_candidate
+                .strip_prefix(&root)
+                .ok()
+                .and_then(|path| path.components().next())
+            else {
+                continue;
+            };
+            if !matches!(canonical_flavor, std::path::Component::Normal(name) if name == std::ffi::OsStr::new(flavor))
+            {
                 continue;
             }
             let Ok(metadata) = fs::metadata(&candidate) else {
@@ -570,13 +581,17 @@ mod tests {
         let temp = tempdir().unwrap();
         make_dump(temp.path(), "_retail_", "Alpha");
         make_dump(temp.path(), "_classic_era_", "Alpha");
+        make_dump(temp.path(), "_forever_", "Alpha");
         make_dump(temp.path(), "_classic_", "Beta");
         let results = discover_files(temp.path(), &BTreeSet::new());
-        assert_eq!(results.len(), 3);
+        assert_eq!(results.len(), 4);
         assert!(results
             .iter()
             .any(|file| file.flavor == "retail" && file.account == "Alpha"));
         assert!(results.iter().any(|file| file.flavor == "classic_era"));
+        assert!(results
+            .iter()
+            .any(|file| file.flavor == "forever" && file.account == "Alpha"));
         assert!(results
             .iter()
             .any(|file| file.flavor == "classic" && file.account == "Beta"));
@@ -703,6 +718,29 @@ mod tests {
         fs::create_dir_all(linked.parent().unwrap()).unwrap();
         symlink(&real, &linked).unwrap();
         assert_eq!(discover_files(temp.path(), &BTreeSet::new()).len(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_rejects_in_root_symlinks_that_cross_client_flavors() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().unwrap();
+        let retail_dump = make_dump(temp.path(), "_retail_", "Alpha");
+        let forever_link = temp
+            .path()
+            .join("_forever_/WTF/Account/Alpha/SavedVariables/Flynn.lua");
+        fs::create_dir_all(forever_link.parent().unwrap()).unwrap();
+        symlink(&retail_dump, &forever_link).unwrap();
+
+        let discovered = discover_files(temp.path(), &BTreeSet::new());
+
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].flavor, "retail");
+        assert_eq!(
+            Path::new(&discovered[0].path),
+            fs::canonicalize(retail_dump).unwrap()
+        );
     }
 
     #[cfg(unix)]

@@ -19,8 +19,8 @@ final class ImportFlynnCatalog extends Command
     {
         $path = $this->argument('file');
         $flavor = $this->option('game-flavor');
-        if (! in_array($flavor, ['retail', 'classic_era', 'classic'], true)) {
-            $this->error('Provide --game-flavor=retail, --game-flavor=classic_era, or --game-flavor=classic.');
+        if (! in_array($flavor, ['retail', 'classic_era', 'classic', 'forever'], true)) {
+            $this->error('Provide --game-flavor=retail, --game-flavor=classic_era, --game-flavor=classic, or --game-flavor=forever.');
 
             return self::FAILURE;
         }

@@ -7,7 +7,7 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 - [x] Create the planned `addon/`, `web/`, `desktop/`, and `bot/` application structure.
 - [x] Define and document the versioned character/profession/recipe data contract shared by the addon, web API, and desktop app.
   - [x] Include integer `schemaVersion` in every SavedVariables and export payload.
-  - [x] Specify supported `gameFlavor` values: `retail`, `classic_era`, and `classic`.
+  - [x] Specify supported `gameFlavor` values: `retail`, `classic_era`, `classic`, and `forever` (WoW Forever/Camelot is independent).
   - [x] Define identifiers and fields for characters, professions, recipes, outputs, reagents, quality, and reagent slots.
 - [x] Define the `/api/v1/*` API contract; the Laravel backend is the sole owner of persistent domain state and business rules.
 - [x] Define payload/file size limits, API rate limits, validation rules, and actionable unsupported-schema errors.
@@ -21,7 +21,7 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 
 ### Data capture and compatibility
 
-- [x] Create a flavor-aware addon layout and package metadata for Retail, Classic Era, and Classic clients.
+- [x] Create a flavor-aware addon layout and package metadata for Retail, Classic Era, Classic, and WoW Forever clients.
 - [x] Implement the Retail/modern `C_TradeSkillUI` and legacy `GetTradeSkill*` adapters for the full verified roster, including Archaeology and sixth-slot First Aid where exposed.
 - [x] Capture recipe-less Herbalism, Fishing, Skinning, and Archaeology from roster ranks with empty recipe arrays; do not require nonexistent recipe windows.
 - [x] Add the Classic Era Enchanting `GetCraft*` adapter as an additional compatibility path; it does not limit capture to Enchanting.
@@ -93,7 +93,7 @@ Use this checklist to build and track the Flynn applications. Check an item off 
 - [x] Store API/session tokens only in the OS credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service); no plaintext fallback.
 - [x] Detect expired/401 credentials and prompt the user to authenticate again.
 - [x] Auto-detect standard WoW installation paths on supported OSes and provide a manual folder picker.
-- [x] Discover `Flynn.lua` under `<WoW Root>/{_retail_,_classic_era_,_classic_}/WTF/Account/*/SavedVariables/`.
+  - [x] Discover `Flynn.lua` under `<WoW Root>/{_retail_,_classic_era_,_classic_,_forever_}/WTF/Account/*/SavedVariables/`.
 - [x] Watch discovered files with OS filesystem events and debounce writes until reload/logout file updates settle.
 - [x] SHA-256 hash file contents and skip uploads when a file has not changed.
 - [x] Implement Automatic Sync on file change and a manual Upload Now action.

@@ -4,6 +4,7 @@ import { fallbackItemName, fallbackRecipeName, formatFlavorName } from './format
 describe('catalog fallback labels', () => {
     it('uses human-readable supported game flavor names', () => {
         expect(formatFlavorName('classic_era')).toBe('Classic Era');
+        expect(formatFlavorName('forever')).toBe('WoW Forever');
         expect(formatFlavorName('retail')).toBe('Retail');
     });
 

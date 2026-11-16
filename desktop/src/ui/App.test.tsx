@@ -59,6 +59,18 @@ beforeEach(() => {
 });
 
 describe('App status ordering', () => {
+    it('shows WoW Forever as a distinct discovered flavor label', async () => {
+        const persisted = status('https://api.example.test');
+        persisted.files = [{ path: '/wow/_forever_/WTF/Account/Camelot/SavedVariables/Flynn.lua', flavor: 'forever', account: 'Camelot', sizeBytes: 120, enabled: true }];
+        invokeMock.mockImplementation((command: string) => {
+            if (command === 'get_status') return Promise.resolve(persisted);
+            throw new Error(`Unexpected Tauri command: ${command}`);
+        });
+        render(<App />);
+
+        expect(await screen.findByText('WoW Forever')).toBeTruthy();
+    });
+
     it('shows persisted settings durability and credential cleanup warnings', async () => {
         const persisted = {
             ...status('https://api.example.test'),

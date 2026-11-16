@@ -125,6 +125,8 @@ On acceptance, the endpoint responds `202 Accepted` with `{ "data": { "dumpId": 
 
 Search and discovery results include only characters assigned to that guild and owned by approved members. The backend scopes results by the guild's flavor and region/realm rules, and returns freshness timestamps so clients can communicate sync age.
 
+Supported flavor values are `retail`, `classic_era`, `classic`, and `forever`. WoW Forever is a distinct domain namespace; catalog rows are scoped by the flavor supplied to the offline importer, which cannot independently establish snapshot provenance. Operators must only import a verified Forever-specific snapshot as `forever`. No verified Forever catalog is currently supplied, so responses preserve numeric-ID fallback labels rather than borrowing another client's catalog.
+
 ### Carts and crafting requests
 
 Cart operations are scoped to the current web user or the authenticated bot actor plus guild. A cart is temporary application state owned by the backend and expires after an implementation-defined idle period.

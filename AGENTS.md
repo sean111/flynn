@@ -7,8 +7,9 @@ Flynn is an end-to-end World of Warcraft guild profession catalog and crafting r
 ### Supported WoW Flavors
 Flynn supports multiple World of Warcraft client flavors simultaneously, isolating recipe databases, characters, and guild rosters by flavor:
 - **Retail** (`_retail_`)
-- **Classic Forever / Era** (`_classic_era_`)
+- **Classic Era** (`_classic_era_`)
 - **Classic Progression / Anniversary** (`_classic_`)
+- **WoW Forever / Camelot** (`_forever_`, distinct `forever` domain flavor)
 
 ### Planned Repository Layout
 - `addon/` — World of Warcraft Lua addon (multi-TOC / flavor-aware)
@@ -59,7 +60,7 @@ Collect profession skill levels, specializations, known recipes, crafted output 
 
 ### Guild & Membership Management
 1. **Guild Creation**:
-   - Any authenticated user can create a guild specifying: guild name, game flavor (`retail`, `classic_era`, `classic`), region, realm, and optional linked `discord_guild_id` (verified by bot presence/admin permission).
+   - Any authenticated user can create a guild specifying: guild name, game flavor (`retail`, `classic_era`, `classic`, `forever`), region, realm, and optional linked `discord_guild_id` (verified by bot presence/admin permission).
    - The creator becomes the **Guild Owner** and may promote/demote **Officers**.
 2. **Signup & Approval Workflow**:
    - Authenticated users can discover or use an invite link to apply to a guild.
@@ -103,7 +104,7 @@ Collect profession skill levels, specializations, known recipes, crafted output 
    - Persist session/API tokens exclusively in the OS native credential store (macOS Keychain, Windows Credential Manager, Linux Secret Service); handle 401/expired tokens gracefully by prompting re-authentication.
 2. **WoW Directory & `SavedVariables` Watcher**:
    - Auto-detect standard World of Warcraft install paths per OS (with manual folder picker override).
-   - Scan `<WoW Root>/{_retail_,_classic_era_,_classic_}/WTF/Account/*/SavedVariables/Flynn.lua`.
+   - Scan `<WoW Root>/{_retail_,_classic_era_,_classic_,_forever_}/WTF/Account/*/SavedVariables/Flynn.lua`.
    - Watch discovered `Flynn.lua` files using OS file-system events with debounce (waiting for file writes to settle on WoW `/reload` or exit) and SHA-256 content hashing so unchanged files are never re-uploaded.
 3. **Upload Controls & Settings**:
    - Support both **Automatic Sync** (on file change) and a manual **Upload Now** button.

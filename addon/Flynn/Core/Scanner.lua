@@ -48,6 +48,17 @@ local function registerOptionalCraftClose(frame)
   local ok = pcall(frame.RegisterEvent, frame, 'CRAFT_CLOSE')
   return ok
 end
+local function registerOptionalCraftShow(frame)
+  -- Modern clients such as WoW Forever do not expose the legacy CraftFrame
+  -- event. Treat it as optional and fail closed on clients that reject it.
+  local eventUtils = _G.C_EventUtils
+  if eventUtils and type(eventUtils.IsEventValid) == 'function' then
+    local validCall, isValid = pcall(eventUtils.IsEventValid, 'CRAFT_SHOW')
+    if validCall and isValid ~= true then return false end
+  end
+  local ok = pcall(frame.RegisterEvent, frame, 'CRAFT_SHOW')
+  return ok
+end
 local function cleanup(frame)
   Scanner.active = false
   Scanner.pending = nil
@@ -203,7 +214,13 @@ function Scanner.initialize()
   frame:RegisterEvent('PLAYER_LOGIN')
   frame:RegisterEvent('TRADE_SKILL_CLOSE')
   Scanner.craftCloseRegistered = registerOptionalCraftClose(frame)
-  for event in pairs(scanEvents) do frame:RegisterEvent(event) end
+  for event in pairs(scanEvents) do
+    if event == 'CRAFT_SHOW' then
+      Scanner.craftShowRegistered = registerOptionalCraftShow(frame)
+    else
+      frame:RegisterEvent(event)
+    end
+  end
   frame:SetScript('OnEvent', function(self, event)
     if event == 'PLAYER_LOGIN' then
       local database = ensureDatabase()

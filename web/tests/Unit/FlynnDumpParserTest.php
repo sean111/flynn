@@ -16,6 +16,19 @@ final class FlynnDumpParserTest extends TestCase
         $this->assertSame('Examplemage', $document['characters']['retail']['us']['Area 52']['Examplemage']['characterName']);
     }
 
+    public function test_accepts_forever_as_an_independent_character_namespace(): void
+    {
+        $document = (new FlynnDumpParser)->parseJson(json_encode([
+            'schemaVersion' => 1,
+            'characters' => ['forever' => ['us' => ['Camelot' => ['Anvil' => [
+                'gameFlavor' => 'forever', 'region' => 'us', 'realm' => 'Camelot', 'characterName' => 'Anvil',
+                'guid' => 'Player-18-ghi', 'faction' => 'alliance', 'class' => 'WARRIOR', 'capturedAt' => 1794528000, 'professions' => [],
+            ]]]]],
+        ], JSON_THROW_ON_ERROR));
+
+        $this->assertSame('forever', $document['characters']['forever']['us']['Camelot']['Anvil']['gameFlavor']);
+    }
+
     public function test_rejects_executable_lua_syntax(): void
     {
         $this->expectException(InvalidArgumentException::class);
