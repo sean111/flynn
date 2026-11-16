@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,20 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     return (Array.isArray(data) ? withCursor(data, result.nextCursor) : data) as T;
 }
 
+async function logoutRequest(): Promise<void> {
+    const request = () => api<void>('/auth/logout', { method: 'POST', body: '{}' });
+    try {
+        await request();
+    } catch (exception) {
+        if (!(exception instanceof ApiError) || exception.status !== 419) throw exception;
+
+        const csrfResponse = await fetch('/sanctum/csrf-cookie', { credentials: 'same-origin' });
+        if (!csrfResponse.ok) throw new Error('Could not refresh the sign-out security token.', { cause: exception });
+        csrfReady = true;
+        await request();
+    }
+}
+
 async function loadCursorPage<T>(client: QueryClient, queryKey: readonly unknown[], path: string, current?: CursorList<T>) {
     if (!current?.nextCursor) return;
     const page = await api<CursorList<T>>(cursorUrl(path, current.nextCursor));
@@ -51,27 +65,74 @@ function Button({ children, kind = 'primary', ...props }: React.ButtonHTMLAttrib
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`panel rounded-2xl p-5 md:p-6 ${className}`}>{children}</section>; }
 function Title({ eyebrow, children, note }: { eyebrow?: string; children: React.ReactNode; note?: string }) { return <div className="mb-6"><div className="mb-2 text-[10px] font-bold uppercase tracking-[.25em] text-[#c39a5d]">{eyebrow ?? 'Flynn · Guild Ledger'}</div><h1 className="text-3xl font-semibold tracking-tight text-stone-100">{children}</h1>{note && <p className="mt-2 max-w-2xl text-sm text-stone-400">{note}</p>}</div>; }
 function Notice({ error, success }: { error?: string; success?: string }) { if (!error && !success) return null; return <div role="status" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${error ? 'border-rose-900/70 bg-rose-950/30 text-rose-200' : 'border-emerald-900/70 bg-emerald-950/30 text-emerald-200'}`}>{error ?? success}</div>; }
-function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) { return <label className="block space-y-2 text-sm text-stone-300"><span>{label}</span><input {...props} className={`w-full rounded-xl border border-white/10 bg-[#151513] px-3.5 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-[#b68a4e] ${props.className ?? ''}`} /></label>; }
+function Field({ label, error, id, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
+    const inputId = id ?? label.toLowerCase().replace(/\s+/g, '-');
+    const errorId = error ? `${inputId}-error` : undefined;
+    return <div className="space-y-2 text-sm text-stone-300"><label htmlFor={inputId} className="block">{label}</label><input {...props} id={inputId} aria-invalid={error ? true : props['aria-invalid']} aria-describedby={errorId ?? props['aria-describedby']} className={`w-full rounded-xl border border-white/10 bg-[#151513] px-3.5 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-[#b68a4e] ${error ? 'border-rose-700/80' : ''} ${props.className ?? ''}`} />{error && <span id={errorId} role="alert" className="block text-xs leading-5 text-rose-300">{error}</span>}</div>;
+}
 function FlavorBadge({ flavor }: { flavor: string }) { return <span className="rounded-full border border-[#b9945d]/35 bg-[#b9945d]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#d3b479]">{flavor.replace('_', ' ')}</span>; }
 
-function AuthPage({ mode, onAuthenticated, returnTo = '/' }: { mode: 'login' | 'register'; onAuthenticated: (account: Account) => void; returnTo?: string }) {
+export function AuthPage({ mode, onAuthenticated, returnTo = '/' }: { mode: 'login' | 'register'; onAuthenticated: (account: Account) => void; returnTo?: string }) {
     const navigate = useNavigate();
     const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
     const [error, setError] = useState('');
-    const { register, handleSubmit, formState: { isSubmitting } } = useForm<{ name: string; email: string; password: string; password_confirmation: string }>();
+    const { register, handleSubmit, setError: setFieldError, formState: { errors, isSubmitting } } = useForm<{ name: string; email: string; password: string; password_confirmation: string }>();
+    const isRegistering = mode === 'register';
+    const registrationPasswordRules = {
+        required: 'Enter a password.',
+        validate: (value: string) => {
+            if ([...value].length < 12) return 'Use at least 12 characters.';
+            if (!/\p{L}/u.test(value)) return 'Include at least one letter.';
+            if (!/\p{Ll}/u.test(value)) return 'Include at least one lowercase letter.';
+            if (!/\p{Lu}/u.test(value)) return 'Include at least one uppercase letter.';
+            if (!/\p{N}/u.test(value)) return 'Include at least one number.';
+            return true;
+        },
+    };
+    const emailRules = {
+        required: 'Enter your email address.',
+        ...(isRegistering ? { maxLength: { value: 254, message: 'Email addresses must be 254 characters or fewer.' } } : {}),
+    };
     const submit = handleSubmit(async (form) => {
         setError('');
         try {
-            const result = await api<Account>(`/auth/${mode === 'register' ? 'register' : 'login'}`, { method: 'POST', body: JSON.stringify(form) });
+            const result = await api<Account>(`/auth/${isRegistering ? 'register' : 'login'}`, { method: 'POST', body: JSON.stringify(form) });
             onAuthenticated(result); navigate(safeReturnTo);
-        } catch (exception) { setError(exception instanceof ApiError ? exception.message : 'Something went wrong.'); }
+        } catch (exception) {
+            if (exception instanceof ApiError) {
+                const details = exception.details;
+                if (details && typeof details === 'object') {
+                    for (const field of ['name', 'email', 'password', 'password_confirmation'] as const) {
+                        const messages = (details as Record<string, unknown>)[field];
+                        if (Array.isArray(messages) && typeof messages[0] === 'string') {
+                            setFieldError(field, { type: 'server', message: messages[0] });
+                        }
+                    }
+                }
+                setError(exception.message);
+            } else {
+                setError('Something went wrong.');
+            }
+        }
     });
-    return <main className="rune-grid flex min-h-screen items-center justify-center px-5 py-12"><div className="grid w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#c39a5d]/20 bg-[#171715] shadow-2xl md:grid-cols-[1fr_.85fr]"><div className="hidden min-h-[580px] flex-col justify-between bg-[radial-gradient(ellipse_at_55%_30%,rgba(154,108,48,.25),transparent_50%),linear-gradient(145deg,#29251e,#131312)] p-12 md:flex"><div><div className="mb-7 text-4xl text-[#d1a96b]">✦</div><div className="text-xs font-bold uppercase tracking-[.3em] text-[#d2aa68]">The artisan’s ledger</div><h1 className="mt-5 max-w-sm text-5xl font-semibold leading-tight">Craft together.<br /><span className="text-[#d1aa6d]">Remember everything.</span></h1></div><p className="max-w-sm text-sm leading-6 text-stone-400">A living catalog of guild knowledge, skilled hands, and the next great commission.</p></div><div className="p-8 md:p-12"><Link to="/" className="text-xs uppercase tracking-[.22em] text-stone-500">← Flynn</Link><h2 className="mt-12 text-3xl font-semibold">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2><p className="mb-8 mt-2 text-sm text-stone-400">{mode === 'login' ? 'Return to your guild’s craft hall.' : 'Begin building your guild craft network.'}</p><Notice error={error} /><form onSubmit={submit} className="space-y-4">{mode === 'register' && <Field label="Display name" autoComplete="name" {...register('name', { required: true })} />}<Field label="Email" type="email" autoComplete="email" {...register('email', { required: true })} /><Field label="Password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} {...register('password', { required: true, minLength: mode === 'register' ? 12 : 1 })} />{mode === 'register' && <Field label="Confirm password" type="password" autoComplete="new-password" {...register('password_confirmation', { required: true })} />}<Button type="submit" disabled={isSubmitting} className="mt-2 w-full">{isSubmitting ? 'One moment…' : mode === 'login' ? 'Sign in' : 'Create account'} <span>→</span></Button></form><p className="mt-7 text-center text-sm text-stone-500">{mode === 'login' ? 'New to Flynn?' : 'Already have a ledger?'} <Link className="gold-text" to={mode === 'login' ? `/register?returnTo=${encodeURIComponent(safeReturnTo)}` : `/login?returnTo=${encodeURIComponent(safeReturnTo)}`}>{mode === 'login' ? 'Create account' : 'Sign in'}</Link></p></div></div></main>;
+
+    return <main className="rune-grid flex min-h-screen items-center justify-center px-5 py-12"><div className="grid w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#c39a5d]/20 bg-[#171715] shadow-2xl md:grid-cols-[1fr_.85fr]"><div className="hidden min-h-[580px] flex-col justify-between bg-[radial-gradient(ellipse_at_55%_30%,rgba(154,108,48,.25),transparent_50%),linear-gradient(145deg,#29251e,#131312)] p-12 md:flex"><div><div className="mb-7 text-4xl text-[#d1a96b]">✦</div><div className="text-xs font-bold uppercase tracking-[.3em] text-[#d2aa68]">The artisan’s ledger</div><h1 className="mt-5 max-w-sm text-5xl font-semibold leading-tight">Craft together.<br /><span className="text-[#d1a96d]">Remember everything.</span></h1></div><p className="max-w-sm text-sm leading-6 text-stone-400">A living catalog of guild knowledge, skilled hands, and the next great commission.</p></div><div className="p-8 md:p-12"><Link to="/" className="text-xs uppercase tracking-[.22em] text-stone-500">← Flynn</Link><h2 className="mt-12 text-3xl font-semibold">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2><p className="mb-8 mt-2 text-sm text-stone-400">{mode === 'login' ? 'Return to your guild’s craft hall.' : 'Begin building your guild craft network.'}</p><Notice error={error} /><form noValidate onSubmit={submit} className="space-y-4">
+        {isRegistering && <Field label="Display name" autoComplete="name" error={errors.name?.message} {...register('name', { required: 'Enter a display name.', validate: (value) => {
+            const length = [...value.trim()].length;
+            if (length < 2) return 'Display name must be at least 2 characters.';
+            if (length > 100) return 'Display name must be 100 characters or fewer.';
+            return true;
+        } })} />}
+        <Field label="Email" type="email" autoComplete="email" error={errors.email?.message} {...register('email', emailRules)} />
+        <Field label="Password" type="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} error={errors.password?.message} {...register('password', isRegistering ? registrationPasswordRules : { required: 'Enter your password.' })} />
+        {isRegistering && <Field label="Confirm password" type="password" autoComplete="new-password" error={errors.password_confirmation?.message} {...register('password_confirmation', { required: 'Confirm your password.', validate: (value, values) => value === values.password || 'Passwords do not match.' })} />}
+        <Button type="submit" disabled={isSubmitting} className="mt-2 w-full">{isSubmitting ? 'One moment…' : mode === 'login' ? 'Sign in' : 'Create account'} <span>→</span></Button>
+        </form><p className="mt-7 text-center text-sm text-stone-500">{mode === 'login' ? 'New to Flynn?' : 'Already have a ledger?'} <Link className="gold-text" to={mode === 'login' ? `/register?returnTo=${encodeURIComponent(safeReturnTo)}` : `/login?returnTo=${encodeURIComponent(safeReturnTo)}`}>{mode === 'login' ? 'Create account' : 'Sign in'}</Link></p></div></div></main>;
 }
 
-function Shell({ account, onLogout, children }: { account: Account; onLogout: () => void; children: React.ReactNode }) {
+function Shell({ account, onLogout, logoutPending, logoutError, children }: { account: Account; onLogout: () => void; logoutPending: boolean; logoutError: string; children: React.ReactNode }) {
     const links = [['Overview', '/', '⌂'], ['Guild halls', '/guilds', '♜'], ['Characters', '/characters', '✧'], ['Crafting', '/crafting', '⚒'], ['Requests', '/requests', '◈'], ['Account', '/account', '⚙']];
-    return <div className="min-h-screen bg-[#111110] text-stone-100"><aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] border-r border-white/[.07] bg-[#151514] px-5 py-7 lg:flex lg:flex-col"><Link to="/" className="mb-12 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#c49a5d]/35 bg-[#c49a5d]/10 text-xl text-[#d5ae70]">✦</span><span><b className="block tracking-[.16em]">FLYNN</b><small className="text-[10px] uppercase tracking-[.18em] text-stone-600">Guild craft ledger</small></span></Link><nav className="space-y-1">{links.map(([label, path, icon]) => <NavLink key={path} to={path} end={path === '/'} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm transition ${isActive ? 'bg-[#b38a50]/15 text-[#e2bd7f]' : 'text-stone-500 hover:bg-white/[.04] hover:text-stone-200'}`}><span className="w-5 text-center">{icon}</span>{label}</NavLink>)}</nav><div className="mt-auto rounded-2xl border border-white/[.07] bg-white/[.025] p-4"><div className="mb-2 text-[10px] uppercase tracking-[.2em] text-stone-600">Signed in as</div><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 truncate text-xs text-stone-500">{account.email}</div><button onClick={onLogout} className="mt-4 text-xs text-stone-500 hover:text-rose-300">Sign out ↗</button></div></aside><div className="lg:pl-[250px]"><header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-white/[.07] bg-[#111110]/90 px-5 backdrop-blur md:px-9"><div className="text-xs uppercase tracking-[.2em] text-stone-500">The armory · <span className="text-stone-300">Knowledge shared</span></div><Link to="/account" className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-xs text-stone-300"><span className="h-2 w-2 rounded-full bg-emerald-500" />{account.name}</Link></header><main className="mx-auto max-w-[1400px] px-5 py-8 md:px-9 md:py-10">{children}</main><nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/10 bg-[#151514]/95 py-2 backdrop-blur lg:hidden">{links.slice(0, 5).map(([label, path, icon]) => <NavLink key={path} to={path} className={({ isActive }) => `flex min-w-[52px] flex-col items-center gap-1 px-2 py-1 text-[10px] ${isActive ? 'text-[#d5ae70]' : 'text-stone-500'}`}><span className="text-lg">{icon}</span>{label}</NavLink>)}</nav><div className="h-16 lg:hidden" /></div></div>;
+    return <div className="min-h-screen bg-[#111110] text-stone-100"><aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] border-r border-white/[.07] bg-[#151514] px-5 py-7 lg:flex lg:flex-col"><Link to="/" className="mb-12 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#c49a5d]/35 bg-[#c49a5d]/10 text-xl text-[#d5ae70]">✦</span><span><b className="block tracking-[.16em]">FLYNN</b><small className="text-[10px] uppercase tracking-[.18em] text-stone-600">Guild craft ledger</small></span></Link><nav className="space-y-1">{links.map(([label, path, icon]) => <NavLink key={path} to={path} end={path === '/'} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm transition ${isActive ? 'bg-[#b38a50]/15 text-[#e2bd7f]' : 'text-stone-500 hover:bg-white/[.04] hover:text-stone-200'}`}><span className="w-5 text-center">{icon}</span>{label}</NavLink>)}</nav><div className="mt-auto rounded-2xl border border-white/[.07] bg-white/[.025] p-4"><div className="mb-2 text-[10px] uppercase tracking-[.2em] text-stone-600">Signed in as</div><div className="truncate text-sm font-medium">{account.name}</div><div className="mt-1 truncate text-xs text-stone-500">{account.email}</div><button onClick={onLogout} disabled={logoutPending} className="mt-4 text-xs text-stone-500 hover:text-rose-300 disabled:cursor-wait disabled:opacity-60">{logoutPending ? 'Signing out…' : 'Sign out ↗'}</button>{logoutError && <p role="alert" className="mt-3 text-xs leading-5 text-rose-300">{logoutError}</p>}</div></aside><div className="lg:pl-[250px]"><header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-white/[.07] bg-[#111110]/90 px-5 backdrop-blur md:px-9"><div className="text-xs uppercase tracking-[.2em] text-stone-500">The armory · <span className="text-stone-300">Knowledge shared</span></div><Link to="/account" className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[.03] px-3 py-1.5 text-xs text-stone-300"><span className="h-2 w-2 rounded-full bg-emerald-500" />{account.name}</Link></header><main className="mx-auto max-w-[1400px] px-5 py-8 md:px-9 md:py-10">{children}</main><nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/10 bg-[#151514]/95 py-2 backdrop-blur lg:hidden">{links.slice(0, 5).map(([label, path, icon]) => <NavLink key={path} to={path} className={({ isActive }) => `flex min-w-[52px] flex-col items-center gap-1 px-2 py-1 text-[10px] ${isActive ? 'text-[#d5ae70]' : 'text-stone-500'}`}><span className="text-lg">{icon}</span>{label}</NavLink>)}</nav><div className="h-16 lg:hidden" /></div></div>;
 }
 
 function HomePage({ account }: { account: Account }) {
@@ -480,13 +541,33 @@ function DesktopConsentPage({ account, onAuthenticated }: { account: Account | n
     return <main className="rune-grid flex min-h-screen items-center justify-center px-5 py-12"><Card className="w-full max-w-xl p-8 md:p-10"><div className="mb-6 text-3xl text-[#d1a96b]">✦</div><div className="text-[10px] font-bold uppercase tracking-[.25em] text-[#c39a5d]">Flynn Desktop</div><h1 className="mt-3 text-3xl font-semibold">Authorize this device?</h1><p className="mt-3 text-sm leading-6 text-stone-400"><b className="text-stone-200">{account.name}</b> is signed in. Authorizing redirects a one-time code to <span className="text-[#d3ad70]">{callbackHost}</span>.</p><div className="my-6 rounded-xl border border-white/[.07] bg-white/[.025] p-4"><div className="text-xs font-semibold text-stone-200">Flynn Desktop will be allowed to</div><ul className="mt-3 space-y-2 text-xs text-stone-500"><li>• Read your Flynn account identity</li><li>• Upload your Flynn character export files</li></ul></div><form method="POST" action="/api/v1/auth/desktop/authorize"><input type="hidden" name="_token" value={csrfToken} /><input type="hidden" name="codeChallenge" value={codeChallenge} /><input type="hidden" name="state" value={state} /><input type="hidden" name="redirectUri" value={redirectUri} /><div className="flex flex-wrap gap-3"><Button type="submit">Authorize Flynn Desktop →</Button><Link to="/" className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-stone-400 hover:bg-white/[.04]">Cancel</Link></div></form><p className="mt-6 text-[10px] leading-5 text-stone-600">The authorization code can only be used once and is bound to this device’s PKCE verifier. Flynn Desktop never receives your password.</p></Card></main>;
 }
 
-function App() {
+export function App() {
     const [account, setAccount] = useState<Account | null>(null); const [loaded, setLoaded] = useState(false); const navigate = useNavigate(); const query = useQueryClient();
+    const [logoutPending, setLogoutPending] = useState(false); const [logoutError, setLogoutError] = useState(''); const logoutInFlight = useRef(false);
     const location = useLocation();
     useEffect(() => { void api<Account>('/me').then((current) => setAccount(current)).catch(() => setAccount(null)).finally(() => setLoaded(true)); }, []);
-    const logout = async () => { await api('/auth/logout', { method: 'POST', body: '{}' }); setAccount(null); query.clear(); navigate('/login'); };
+    const clearLocalSession = () => { setAccount(null); query.clear(); navigate('/login'); };
+    const logout = async () => {
+        if (logoutInFlight.current) return;
+        logoutInFlight.current = true;
+        setLogoutPending(true);
+        setLogoutError('');
+        try {
+            await logoutRequest();
+            clearLocalSession();
+        } catch (exception) {
+            if (exception instanceof ApiError && exception.status === 401) {
+                clearLocalSession();
+            } else {
+                setLogoutError('Sign-out could not be completed. You are still signed in; please try again.');
+            }
+        } finally {
+            logoutInFlight.current = false;
+            setLogoutPending(false);
+        }
+    };
     if (!loaded) return <div className="flex min-h-screen items-center justify-center bg-[#111110] text-sm text-stone-500">Opening your ledger…</div>;
-    return <Routes><Route path="/desktop/authorize" element={<DesktopConsentPage account={account} onAuthenticated={setAccount} />} /><Route path="/guild-invites/:inviteToken" element={<GuildInvitePage account={account} onAuthenticated={setAccount} />} /><Route path="/login" element={account ? <HomePage account={account} /> : <AuthPage mode="login" onAuthenticated={setAccount} returnTo={new URLSearchParams(location.search).get('returnTo') ?? '/'} />} /><Route path="/register" element={account ? <HomePage account={account} /> : <AuthPage mode="register" onAuthenticated={setAccount} returnTo={new URLSearchParams(location.search).get('returnTo') ?? '/'} />} /><Route path="*" element={account ? <Shell account={account} onLogout={() => void logout()}><Routes><Route path="/" element={<HomePage account={account} />} /><Route path="/guilds" element={<GuildsPage />} /><Route path="/characters" element={<CharactersPage />} /><Route path="/crafting" element={<CraftingPage />} /><Route path="/requests" element={<RequestsPage />} /><Route path="/account" element={<AccountPage account={account} onAccount={setAccount} />} /><Route path="*" element={<HomePage account={account} />} /></Routes></Shell> : <AuthPage mode="login" onAuthenticated={setAccount} />} /></Routes>;
+    return <Routes><Route path="/desktop/authorize" element={<DesktopConsentPage account={account} onAuthenticated={setAccount} />} /><Route path="/guild-invites/:inviteToken" element={<GuildInvitePage account={account} onAuthenticated={setAccount} />} /><Route path="/login" element={account ? <HomePage account={account} /> : <AuthPage mode="login" onAuthenticated={setAccount} returnTo={new URLSearchParams(location.search).get('returnTo') ?? '/'} />} /><Route path="/register" element={account ? <HomePage account={account} /> : <AuthPage mode="register" onAuthenticated={setAccount} returnTo={new URLSearchParams(location.search).get('returnTo') ?? '/'} />} /><Route path="*" element={account ? <Shell account={account} onLogout={() => void logout()} logoutPending={logoutPending} logoutError={logoutError}><Routes><Route path="/" element={<HomePage account={account} />} /><Route path="/guilds" element={<GuildsPage />} /><Route path="/characters" element={<CharactersPage />} /><Route path="/crafting" element={<CraftingPage />} /><Route path="/requests" element={<RequestsPage />} /><Route path="/account" element={<AccountPage account={account} onAccount={setAccount} />} /><Route path="*" element={<HomePage account={account} />} /></Routes></Shell> : <AuthPage mode="login" onAuthenticated={setAccount} />} /></Routes>;
 }
 
 const mount = document.getElementById('app');

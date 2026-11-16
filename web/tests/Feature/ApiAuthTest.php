@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -28,12 +29,48 @@ final class ApiAuthTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => 'tessera@example.com']);
     }
 
+    public function test_registration_returns_field_validation_details_for_invalid_input(): void
+    {
+        $response = $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/register', [
+            'name' => 'A',
+            'email' => 'not-an-email',
+            'password' => 'short',
+            'password_confirmation' => 'different',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'invalid_input')
+            ->assertJsonStructure(['error' => ['details' => ['name', 'email', 'password']]]);
+        $this->assertDatabaseCount('users', 0);
+    }
+
     public function test_login_accepts_the_account_password_and_rejects_an_incorrect_password(): void
     {
         User::factory()->create(['email' => 'login@example.com', 'password' => 'Correct-Password-892']);
 
         $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/login', ['email' => 'login@example.com', 'password' => 'wrong-password'])->assertUnauthorized()->assertJsonPath('error.code', 'invalid_credentials');
         $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/login', ['email' => 'LOGIN@example.com', 'password' => 'Correct-Password-892'])->assertOk()->assertJsonPath('data.email', 'login@example.com');
+    }
+
+    public function test_logout_invalidates_the_session_and_follow_up_requests_are_unauthenticated(): void
+    {
+        User::factory()->create(['email' => 'logout@example.com', 'password' => 'Correct-Password-892']);
+        $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/login', ['email' => 'logout@example.com', 'password' => 'Correct-Password-892'])->assertOk();
+
+        $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/logout')
+            ->assertNoContent()
+            ->assertSessionMissing('login_web_'.sha1(SessionGuard::class));
+
+        $this->app['auth']->forgetGuards();
+        $this->getJson('/api/v1/me')->assertUnauthorized()->assertJsonPath('error.code', 'unauthenticated')->assertJsonStructure(['error' => ['code', 'message', 'details', 'requestId']]);
+    }
+
+    public function test_logout_returns_a_structured_401_without_an_authenticated_session(): void
+    {
+        $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/logout')
+            ->assertUnauthorized()
+            ->assertJsonPath('error.code', 'unauthenticated')
+            ->assertJsonStructure(['error' => ['code', 'message', 'details', 'requestId']]);
     }
 
     public function test_password_change_requires_the_current_password_and_revokes_desktop_tokens(): void
