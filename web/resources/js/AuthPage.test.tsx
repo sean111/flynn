@@ -157,4 +157,38 @@ describe('registration form validation', () => {
         expect(screen.queryByText('Use at least 12 characters.')).toBeNull();
         expect(screen.getByRole('status').textContent).toContain('The email or password is incorrect.');
     });
+
+    it('clears server and field errors when switching between registration and login', async () => {
+        mockApiResponse(422, {
+            error: {
+                code: 'invalid_input',
+                message: 'The submitted data is invalid.',
+                details: { email: ['This email address is already in use.'] },
+            },
+        });
+        const { rerender } = renderAuthPage('register');
+        fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Aria' } });
+        fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'aria@example.com' } });
+        fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Valid-Password-123' } });
+        fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'Valid-Password-123' } });
+        fireEvent.click(screen.getByRole('button', { name: /create account/i }));
+
+        expect(await screen.findByText('This email address is already in use.')).toBeTruthy();
+        expect(screen.getByRole('status').textContent).toContain('The submitted data is invalid.');
+
+        rerender(<MemoryRouter><AuthPage mode="login" onAuthenticated={vi.fn()} /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText('This email address is already in use.')).toBeNull();
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+        expect(screen.getByLabelText('Email').getAttribute('aria-invalid')).not.toBe('true');
+
+        rerender(<MemoryRouter><AuthPage mode="register" onAuthenticated={vi.fn()} /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText('This email address is already in use.')).toBeNull();
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+    });
 });

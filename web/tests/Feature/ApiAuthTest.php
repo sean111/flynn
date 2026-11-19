@@ -29,6 +29,28 @@ final class ApiAuthTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => 'tessera@example.com']);
     }
 
+    public function test_registration_and_login_start_sessions_for_a_production_host_not_listed_as_stateful(): void
+    {
+        $origin = 'https://flynn.example.com';
+        $credentials = [
+            'name' => 'Tessera',
+            'email' => 'tessera@example.com',
+            'password' => 'Long-Passphrase-907',
+            'password_confirmation' => 'Long-Passphrase-907',
+        ];
+
+        $this->withHeader('Origin', $origin)->postJson('/api/v1/auth/register', $credentials)
+            ->assertCreated()
+            ->assertJsonPath('data.email', 'tessera@example.com');
+
+        $this->app['auth']->forgetGuards();
+
+        $this->withHeader('Origin', $origin)->postJson('/api/v1/auth/login', [
+            'email' => $credentials['email'],
+            'password' => $credentials['password'],
+        ])->assertOk()->assertJsonPath('data.email', 'tessera@example.com');
+    }
+
     public function test_registration_returns_field_validation_details_for_invalid_input(): void
     {
         $response = $this->withHeader('Origin', 'http://localhost')->postJson('/api/v1/auth/register', [

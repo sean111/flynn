@@ -73,6 +73,10 @@ function Field({ label, error, id, ...props }: React.InputHTMLAttributes<HTMLInp
 function FlavorBadge({ flavor }: { flavor: string }) { return <span className="rounded-full border border-[#b9945d]/35 bg-[#b9945d]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#d3b479]">{flavor.replace('_', ' ')}</span>; }
 
 export function AuthPage({ mode, onAuthenticated, returnTo = '/' }: { mode: 'login' | 'register'; onAuthenticated: (account: Account) => void; returnTo?: string }) {
+    return <AuthPageForm key={mode} mode={mode} onAuthenticated={onAuthenticated} returnTo={returnTo} />;
+}
+
+function AuthPageForm({ mode, onAuthenticated, returnTo = '/' }: { mode: 'login' | 'register'; onAuthenticated: (account: Account) => void; returnTo?: string }) {
     const navigate = useNavigate();
     const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
     const [error, setError] = useState('');
