@@ -186,9 +186,11 @@ describe('event-driven scanner lifecycle', function()
     assert.is_false(NS.Scanner.active)
   end)
 
-  it('discards an active legacy scan when its list-update event fires', function()
+  it('restarts an active scan when its list-update event fires', function()
+    local captures = 0
     NS.Adapters.captureActive = function()
-      coroutine.yield()
+      captures = captures + 1
+      if captures == 1 then coroutine.yield() end
       return helpers.profession(171), 'mock', true
     end
     frame:fire('TRADE_SKILL_SHOW')
@@ -196,7 +198,33 @@ describe('event-driven scanner lifecycle', function()
     assert.is_true(NS.Scanner.active)
     frame:fire('TRADE_SKILL_LIST_UPDATE')
     assert.is_false(NS.Scanner.active)
-    runNext() -- stale continuation cannot commit
+    runNext() -- stale continuation cannot affect the restarted scan
+    runNext() -- begin the retry
+    assert.is_true(NS.Model.isUploadable(NS.database, NS.Model.getCharacterIdentity()))
+    assert.are.equal(2, captures)
+    assert.is_false(NS.Scanner.active)
+  end)
+
+  it('bounds automatic restarts when the profession list keeps changing', function()
+    local captures = 0
+    NS.Adapters.captureActive = function()
+      captures = captures + 1
+      coroutine.yield()
+      return helpers.profession(171), 'mock', true
+    end
+    frame:fire('TRADE_SKILL_SHOW')
+    runNext()
+    for _ = 1, 3 do
+      frame:fire('TRADE_SKILL_LIST_UPDATE')
+      runNext() -- stale continuation
+      runNext() -- begin the bounded retry
+      assert.is_true(NS.Scanner.active)
+    end
+    frame:fire('TRADE_SKILL_LIST_UPDATE')
+    assert.is_false(NS.Scanner.active)
+    assert.is_nil(NS.Scanner.pending)
+    assert.are.equal(4, captures)
+    runNext() -- final stale continuation cannot commit
     assert.is_nil(NS.Model.getCharacter(NS.database, 'retail', 'us', 'Area 52', 'Crafter'))
   end)
 
@@ -216,5 +244,23 @@ describe('event-driven scanner lifecycle', function()
     stale()
     assert.is_false(NS.Scanner.active)
     assert.is_nil(NS.Model.getCharacter(NS.database, 'retail', 'us', 'Area 52', 'Crafter'))
+  end)
+
+  it('continues initialization when a client rejects an optional profession event', function()
+    local originalCreateFrame = _G.CreateFrame
+    _G.CreateFrame = function(...)
+      local object = originalCreateFrame(...)
+      local originalRegisterEvent = object.RegisterEvent
+      function object:RegisterEvent(event)
+        if event == 'CRAFT_SHOW' then error('unsupported event') end
+        return originalRegisterEvent(self, event)
+      end
+      return object
+    end
+    local compatibleFrame = NS.Scanner.initialize()
+    assert.is_not_nil(compatibleFrame.scripts.OnEvent)
+    assert.is_nil(compatibleFrame.events.CRAFT_SHOW)
+    assert.is_true(compatibleFrame.events.PLAYER_LOGIN)
+    assert.is_true(compatibleFrame.events.TRADE_SKILL_SHOW)
   end)
 end)

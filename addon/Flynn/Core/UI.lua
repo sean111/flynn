@@ -218,14 +218,55 @@ function UI.openSettings()
   frame:Show()
 end
 
+function UI.status()
+  local buildInfo = _G.GetBuildInfo
+  if type(buildInfo) == 'function' then
+    local ok, version, build, _, interface = pcall(buildInfo)
+    if ok then
+      message('Client ' .. tostring(version) .. ' build ' .. tostring(build) .. ', interface ' .. tostring(interface) .. '.')
+    else
+      message('Client build information is unavailable: ' .. tostring(version))
+    end
+  else
+    message('Client build information is unavailable.')
+  end
+
+  local identity, identityError = NS.Model.getCharacterIdentity()
+  if identity then
+    local key = NS.Model.identityKey(identity.gameFlavor, identity.region, identity.realm, identity.characterName)
+    local settings = NS.database and NS.database.settings
+    local tracked = settings and settings.tracked and settings.tracked[key] == true
+    message('Character ' .. identity.characterName .. ' (' .. identity.gameFlavor .. '); tracking ' .. (tracked and 'on.' or 'off.'))
+  else
+    message(tostring(identityError))
+  end
+
+  local ok, roster, complete, rosterError = pcall(NS.Adapters.knownProfessions)
+  if not ok then
+    message('Profession roster check failed: ' .. tostring(roster))
+  elseif complete then
+    local scanRequired = 0
+    for _, profession in ipairs(roster) do
+      if profession.requiresRecipeScan then scanRequired = scanRequired + 1 end
+    end
+    message('Profession roster available: ' .. tostring(#roster) .. ' total, ' .. tostring(scanRequired) .. ' require scans.')
+  else
+    message('Profession roster unavailable: ' .. tostring(rosterError))
+  end
+
+  local scanner = NS.Scanner
+  message('Scanner frame ' .. (scanner and scanner.frame and 'created' or 'missing') .. '; scan ' .. (scanner and scanner.active and 'active.' or 'idle.'))
+end
+
 function UI.installCommands()
   _G.SLASH_FLYNN1 = '/flynn'
   _G.SlashCmdList = _G.SlashCmdList or {}
   _G.SlashCmdList.FLYNN = function(input)
     local command = (input or ''):lower():match('^%s*(.-)%s*$')
     if command == 'settings' then UI.openSettings(); return end
+    if command == 'status' then UI.status(); return end
     if command == '' or command == 'export' then UI.openExport(); return end
-    message('Commands: /flynn export | /flynn settings')
+    message('Commands: /flynn export | /flynn settings | /flynn status')
   end
 end
 
