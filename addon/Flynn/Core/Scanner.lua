@@ -1,7 +1,7 @@
 local _, NS = ...
 NS = NS or _G.FlynnTestNamespace
 
-local Scanner = { generation = 0, active = false, pending = nil, disabled = false }
+local Scanner = { generation = 0, active = false, pending = nil, disabled = false, listUpdateRetries = 0 }
 local scanEvents = {
   TRADE_SKILL_SHOW = true,
   TRADE_SKILL_DATA_SOURCE_CHANGED = true,
@@ -9,6 +9,7 @@ local scanEvents = {
   CRAFT_SHOW = true,
 }
 local MAX_START_RETRIES = 3
+local MAX_LIST_UPDATE_RETRIES = 3
 local function message(text)
   if _G.print then _G.print('|cff70c7ffFlynn:|r ' .. text) end
 end
@@ -30,23 +31,29 @@ end
 local function currentKey(identity)
   return NS.Model.identityKey(identity.gameFlavor, identity.region, identity.realm, identity.characterName)
 end
+local function registerEvent(frame, event, reportFailure)
+  local ok, err = pcall(frame.RegisterEvent, frame, event)
+  if not ok and reportFailure then
+    message('This client rejected event ' .. event .. ': ' .. tostring(err))
+  end
+  return ok
+end
 local function registerCombatListener(frame)
   if not Scanner.active then return end
-  frame:RegisterEvent('PLAYER_REGEN_DISABLED')
+  registerEvent(frame, 'PLAYER_REGEN_DISABLED', true)
 end
 local function unregisterCombatListener(frame)
-  frame:UnregisterEvent('PLAYER_REGEN_DISABLED')
+  pcall(frame.UnregisterEvent, frame, 'PLAYER_REGEN_DISABLED')
 end
 local function registerOptionalCraftClose(frame)
   if not _G.GetCraftSkillLine then return false end
   local eventUtils = _G.C_EventUtils
   if eventUtils and type(eventUtils.IsEventValid) == 'function' then
-    if eventUtils.IsEventValid('CRAFT_CLOSE') ~= true then return false end
-    frame:RegisterEvent('CRAFT_CLOSE')
-    return true
+    local ok, valid = pcall(eventUtils.IsEventValid, 'CRAFT_CLOSE')
+    if not ok or valid ~= true then return false end
+    return registerEvent(frame, 'CRAFT_CLOSE', false)
   end
-  local ok = pcall(frame.RegisterEvent, frame, 'CRAFT_CLOSE')
-  return ok
+  return registerEvent(frame, 'CRAFT_CLOSE', false)
 end
 local function registerOptionalCraftShow(frame)
   -- Modern clients such as WoW Forever do not expose the legacy CraftFrame
@@ -66,6 +73,34 @@ local function cleanup(frame)
   Scanner.context = nil
   Scanner.thread = nil
   unregisterCombatListener(frame)
+end
+
+local startPendingScan
+local function restartAfterListUpdate(frame, event)
+  if Scanner.listUpdateRetries >= MAX_LIST_UPDATE_RETRIES then
+    Scanner.listUpdateRetries = 0
+    cleanup(frame)
+    message('The profession recipe list kept changing during scanning. Reopen or update the profession to retry.')
+    return
+  end
+
+  Scanner.listUpdateRetries = Scanner.listUpdateRetries + 1
+  Scanner.generation = Scanner.generation + 1
+  local generation = Scanner.generation
+  cleanup(frame)
+  if inCombat() then
+    Scanner.listUpdateRetries = 0
+    message('Scan canceled because combat started. Reopen or update the profession to retry.')
+    return
+  end
+  if not _G.C_Timer or not _G.C_Timer.After then
+    Scanner.listUpdateRetries = 0
+    message('The profession recipe list changed; safe frame-budgeted retry is unavailable.')
+    return
+  end
+  Scanner.pending = generation
+  Scanner.pendingEvent = event
+  _G.C_Timer.After(0, function() startPendingScan(frame, generation, event, 0) end)
 end
 
 local resumeScan
@@ -91,7 +126,7 @@ local function makeContext(event, identity)
   }
 end
 
-local function startPendingScan(frame, generation, fallbackEvent, attempt)
+startPendingScan = function(frame, generation, fallbackEvent, attempt)
   if generation ~= Scanner.generation or Scanner.pending ~= generation then return end
   if inCombat() then
     cleanup(frame)
@@ -202,8 +237,10 @@ resumeScan = function(frame, generation)
   local done, captureError = NS.Model.captureCharacter(database, context.identity, context.roster, context.rosterSignature, profession)
   if captureError then message(captureError); return end
   if done then
+    Scanner.listUpdateRetries = 0
     message('Complete profession snapshot saved for ' .. context.identity.characterName .. '. Use /reload or log out before syncing Flynn.lua.')
   else
+    Scanner.listUpdateRetries = 0
     message('Captured ' .. tostring(profession.skillLineID) .. '; open every recipe-bearing profession in the verified roster to refresh the complete upload snapshot. Gather-only, Fishing, and Archaeology ranks were included automatically. Use /reload or log out before syncing.')
   end
 end
@@ -211,14 +248,14 @@ end
 function Scanner.initialize()
   local frame = _G.CreateFrame('Frame')
   Scanner.frame = frame
-  frame:RegisterEvent('PLAYER_LOGIN')
-  frame:RegisterEvent('TRADE_SKILL_CLOSE')
+  registerEvent(frame, 'PLAYER_LOGIN', true)
+  registerEvent(frame, 'TRADE_SKILL_CLOSE', true)
   Scanner.craftCloseRegistered = registerOptionalCraftClose(frame)
   for event in pairs(scanEvents) do
     if event == 'CRAFT_SHOW' then
       Scanner.craftShowRegistered = registerOptionalCraftShow(frame)
     else
-      frame:RegisterEvent(event)
+      registerEvent(frame, event, true)
     end
   end
   frame:SetScript('OnEvent', function(self, event)
@@ -262,9 +299,7 @@ function Scanner.initialize()
       -- A source switch changes the meaning of the currently displayed recipe index.
       -- Re-start only for that explicit event; repeated SHOW/LIST_UPDATE storms coalesce.
       if event == 'TRADE_SKILL_LIST_UPDATE' then
-        Scanner.generation = Scanner.generation + 1
-        cleanup(self)
-        message('The profession recipe list changed during scanning; the partial scan was discarded. Update/reopen it to retry.')
+        restartAfterListUpdate(self, event)
         return
       end
       if event ~= 'TRADE_SKILL_DATA_SOURCE_CHANGED' then return end
@@ -276,6 +311,7 @@ function Scanner.initialize()
     Scanner.generation = Scanner.generation + 1
     local generation = Scanner.generation
     cleanup(self)
+    Scanner.listUpdateRetries = 0
     if inCombat() then
       message('Combat is active; scan skipped. Reopen or update the profession window after combat to retry.')
       return
