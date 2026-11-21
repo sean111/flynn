@@ -6,6 +6,7 @@ use App\Jobs\IngestDump;
 use App\Models\User;
 use App\Support\FlynnDumpParser;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -157,6 +158,109 @@ final class DumpIngestionTest extends TestCase
 
         $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
         $this->assertDatabaseCount('dumps', 0);
+    }
+
+    public function test_multipart_lua_upload_is_validated_ingested_and_pollable(): void
+    {
+        Storage::fake('local');
+        Queue::fake([IngestDump::class]);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user, ['*']);
+        $originalPayload = file_get_contents(base_path('tests/Fixtures/Flynn.realistic.lua'));
+        $payload = str_replace(
+            "  [\"characters\"] = {\n",
+            "  [\"characters\"] = {\n    [\"classic\"] = {},\n",
+            $originalPayload,
+        );
+        $payload = str_replace(
+            "      [\"us\"] = {\n",
+            "      [\"eu\"] = {},\n      [\"us\"] = {\n        [\"Empty Realm\"] = {},\n",
+            $payload,
+        );
+        $this->assertNotSame($originalPayload, $payload);
+        $this->assertStringContainsString('["classic"] = {},', $payload);
+        $this->assertStringContainsString('["eu"] = {},', $payload);
+        $this->assertStringContainsString('["Empty Realm"] = {},', $payload);
+
+        $response = $this->call('POST', '/api/v1/dumps', [], [], ['file' => UploadedFile::fake()->createWithContent('Flynn.lua', $payload)]);
+
+        $response->assertAccepted()->assertJsonPath('data.status', 'queued');
+        $dumpId = $response->json('data.dumpId');
+        $dump = DB::table('dumps')->where('id', $dumpId)->first();
+        Queue::assertPushed(IngestDump::class, fn (IngestDump $job): bool => $job->format === 'lua');
+        Storage::disk('local')->assertExists($dump->staging_path);
+
+        (new IngestDump($dumpId, $dump->staging_path, 'lua'))->handle(app(FlynnDumpParser::class));
+
+        $this->assertDatabaseHas('dumps', ['id' => $dumpId, 'status' => 'completed', 'characters_seen' => 1, 'characters_updated' => 1]);
+        $this->assertDatabaseHas('characters', ['game_flavor' => 'retail', 'region' => 'us', 'realm' => 'Example Realm PvE', 'character_name' => 'Examplewarlock']);
+        $this->assertDatabaseCount('character_professions', 3);
+        $this->assertDatabaseCount('recipes', 2);
+        $this->assertDatabaseCount('recipe_outputs', 1);
+        $this->assertDatabaseCount('recipe_reagents', 2);
+        $this->assertDatabaseCount('recipe_reagent_slots', 3);
+        $this->assertDatabaseCount('recipe_slot_options', 4);
+        $enchantRecipe = DB::table('recipes')->where('spell_id', 382994)->first();
+        $this->assertSame(0, DB::table('recipe_outputs')->where('recipe_id', $enchantRecipe->id)->count());
+        $this->assertDatabaseMissing('characters', ['realm' => 'Empty Realm']);
+        Storage::disk('local')->assertMissing($dump->staging_path);
+
+        $this->getJson('/api/v1/dumps/'.$dumpId)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.charactersSeen', 1)
+            ->assertJsonPath('data.charactersUpdated', 1);
+    }
+
+    public function test_malformed_multipart_lua_is_rejected_before_staging_or_dispatch(): void
+    {
+        Storage::fake('local');
+        Queue::fake([IngestDump::class]);
+        Sanctum::actingAs(User::factory()->create(), ['*']);
+
+        $this->call('POST', '/api/v1/dumps', [], [], ['file' => UploadedFile::fake()->createWithContent('Flynn.lua', 'FlynnDB = os.execute("bad")')])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'invalid_saved_variables');
+
+        $this->assertDatabaseCount('dumps', 0);
+        Queue::assertNothingPushed();
+        $this->assertSame([], Storage::disk('local')->allFiles('private/dumps'));
+    }
+
+    public function test_per_character_schema_mismatch_includes_supported_version_details(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user, ['*']);
+        $document = json_decode(file_get_contents(base_path('tests/Fixtures/Flynn.realistic.json')), true, 512, JSON_THROW_ON_ERROR);
+        $document['characters']['retail']['us']['Example Realm PvE']['Examplewarlock']['schemaVersion'] = 2;
+
+        $this->postJson('/api/v1/dumps', ['format' => 'structuredJson', 'payload' => $document])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'unsupported_schema_version')
+            ->assertJsonPath('error.details.receivedSchemaVersion', 2)
+            ->assertJsonPath('error.details.supportedSchemaVersions', [1])
+            ->assertJsonPath('error.details.action', 'update_addon_or_server');
+
+        $this->assertDatabaseCount('dumps', 0);
+    }
+
+    public function test_duplicate_slot_options_are_deduplicated_before_database_insert(): void
+    {
+        Storage::fake('local');
+        Queue::fake([IngestDump::class]);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user, ['*']);
+        $document = json_decode(file_get_contents(base_path('tests/Fixtures/Flynn.realistic.json')), true, 512, JSON_THROW_ON_ERROR);
+        $options = &$document['characters']['retail']['us']['Example Realm PvE']['Examplewarlock']['professions'][1]['recipes'][0]['reagentSlots'][1]['options'];
+        $options[] = ['itemID' => 194123];
+
+        $response = $this->postJson('/api/v1/dumps', ['format' => 'structuredJson', 'payload' => $document])->assertAccepted();
+        $dump = DB::table('dumps')->where('id', $response->json('data.dumpId'))->first();
+
+        (new IngestDump($dump->id, $dump->staging_path, 'structuredJson'))->handle(app(FlynnDumpParser::class));
+
+        $this->assertDatabaseHas('dumps', ['id' => $dump->id, 'status' => 'completed']);
+        $this->assertDatabaseCount('recipe_slot_options', 4);
     }
 
     public function test_structured_dump_is_staged_then_upserted_with_claim_grants_and_ownership_conflicts(): void

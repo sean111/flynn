@@ -30,9 +30,8 @@ final class FlynnDumpParser
 
         $parser = new FlynnLiteralParser($source);
         $value = $parser->parseSavedVariables();
-        $this->validateDocument($value);
 
-        return $value;
+        return $this->validateDocument($value);
     }
 
     public function parseJson(string $source, int $maxBytes = self::MAX_JSON_BYTES): array
@@ -48,9 +47,8 @@ final class FlynnDumpParser
 
         $parser = new FlynnJsonParser($source);
         $value = $parser->parse();
-        $this->validateDocument($value);
 
-        return $value;
+        return $this->validateDocument($value);
     }
 
     public function decodeJsonValue(string $source): mixed
@@ -86,13 +84,12 @@ final class FlynnDumpParser
         $json = $this->inflateBounded($compressed);
 
         try {
-            return $this->parseJson($json, self::MAX_INFLATED_BYTES);
-        } catch (InvalidArgumentException $exception) {
-            if (str_starts_with($exception->getMessage(), 'payload_too_large:')) {
-                throw $exception;
-            }
+            $document = (new FlynnJsonParser($json))->parse();
+        } catch (InvalidArgumentException) {
             throw new InvalidArgumentException('invalid_export_string: Export compression or JSON data is invalid.');
         }
+
+        return $this->validateDocument($document);
     }
 
     private function inflateBounded(string $compressed): string
@@ -124,7 +121,7 @@ final class FlynnDumpParser
         throw new InvalidArgumentException('invalid_export_string: Export has a corrupt or truncated Deflate stream.');
     }
 
-    private function validateDocument(mixed $document): void
+    private function validateDocument(mixed $document): array
     {
         if (! is_array($document) || array_is_list($document)) {
             throw new InvalidArgumentException('invalid_payload: Flynn data must be an object.');
@@ -137,30 +134,53 @@ final class FlynnDumpParser
             throw new InvalidArgumentException("unsupported_schema_version: This Flynn data uses schema version {$version}, but this server supports version 1. Update the Flynn addon or use a server release that supports this data version, then export again.");
         }
         $characters = $document['characters'] ?? null;
-        if (! is_array($characters) || $characters === [] || count($characters) > 100) {
-            throw new InvalidArgumentException('invalid_payload: characters must contain between 1 and 100 character records.');
+        if (! is_array($characters) || ($characters !== [] && array_is_list($characters))) {
+            $this->invalid('characters must be a namespace map.');
         }
 
         $recipesTotal = 0;
+        $characterCount = 0;
         foreach ($characters as $flavor => $regions) {
             $this->assertOneOf($flavor, ['retail', 'classic_era', 'classic', 'forever'], 'characters.gameFlavor');
-            if (! is_array($regions) || $regions === []) {
+            if (! is_array($regions) || ($regions !== [] && array_is_list($regions))) {
                 $this->invalid('characters: flavor entries must contain region maps.');
+            }
+            if ($regions === []) {
+                continue;
             }
             foreach ($regions as $region => $realms) {
                 $this->assertOneOf($region, ['us', 'eu', 'kr', 'tw', 'cn'], 'characters.region');
-                if (! is_array($realms) || $realms === []) {
+                if (! is_array($realms) || ($realms !== [] && array_is_list($realms))) {
                     $this->invalid('characters: region entries must contain realm maps.');
+                }
+                if ($realms === []) {
+                    continue;
                 }
                 foreach ($realms as $realm => $records) {
                     $this->assertName($realm, 128, 'realm');
-                    if (! is_array($records) || $records === []) {
+                    if (! is_array($records) || ($records !== [] && array_is_list($records))) {
                         $this->invalid('characters: realm entries must contain character maps.');
                     }
+                    if ($records === []) {
+                        continue;
+                    }
                     foreach ($records as $name => $character) {
+                        $characterCount++;
+                        if ($characterCount > 100) {
+                            $this->invalid('a dump may contain at most 100 character records total across all namespaces.');
+                        }
                         $this->assertName($name, 128, 'characterName');
                         if (! is_array($character) || array_is_list($character)) {
                             $this->invalid("characters.{$name}: expected an object.");
+                        }
+                        if (array_key_exists('schemaVersion', $character)) {
+                            $characterVersion = $character['schemaVersion'];
+                            if (! is_int($characterVersion) || $characterVersion < 1) {
+                                throw new InvalidArgumentException('invalid_schema_version: Per-character schemaVersion must be a positive integer matching the top-level schemaVersion.');
+                            }
+                            if ($characterVersion !== $version) {
+                                throw new InvalidArgumentException("unsupported_schema_version: Per-character schema version {$characterVersion} does not match top-level schema version {$version}. This server supports schema version 1; update or re-export with a consistent Flynn addon version.");
+                            }
                         }
                         foreach (['gameFlavor' => $flavor, 'region' => $region, 'realm' => $realm, 'characterName' => $name] as $field => $expected) {
                             if (($character[$field] ?? null) !== $expected) {
@@ -199,8 +219,8 @@ final class FlynnDumpParser
                                 $this->invalid('duplicate skillLineID in character.');
                             }
                             $seenProfessions[$skill] = true;
-                            $current = $this->integer($profession['currentSkill'] ?? null, 0, 9_007_199_254_740_991, 'currentSkill');
-                            $max = $this->integer($profession['maxSkill'] ?? null, 0, 9_007_199_254_740_991, 'maxSkill');
+                            $current = $this->integer($profession['currentSkill'] ?? null, 0, 4_294_967_295, 'currentSkill');
+                            $max = $this->integer($profession['maxSkill'] ?? null, 0, 4_294_967_295, 'maxSkill');
                             if ($current > $max) {
                                 $this->invalid('currentSkill may not exceed maxSkill.');
                             }
@@ -240,7 +260,7 @@ final class FlynnDumpParser
                                     if (! is_array($quality)) {
                                         $this->invalid('quality must be an object.');
                                     }
-                                    $maxRank = $this->integer($quality['maxRank'] ?? null, 1, 9_007_199_254_740_991, 'quality.maxRank');
+                                    $maxRank = $this->integer($quality['maxRank'] ?? null, 1, 4_294_967_295, 'quality.maxRank');
                                     $ranks = [];
                                     $qualityOutputs = $quality['outputs'] ?? [];
                                     if (! is_array($qualityOutputs) || ! array_is_list($qualityOutputs) || count($qualityOutputs) > 20) {
@@ -250,7 +270,7 @@ final class FlynnDumpParser
                                         if (! is_array($output)) {
                                             $this->invalid('quality output must be an object.');
                                         }
-                                        $rank = $this->integer($output['rank'] ?? null, 1, 9_007_199_254_740_991, 'quality.outputs.rank');
+                                        $rank = $this->integer($output['rank'] ?? null, 1, 4_294_967_295, 'quality.outputs.rank');
                                         if ($rank > $maxRank || isset($ranks[$rank])) {
                                             $this->invalid('quality output ranks must be unique and not exceed maxRank.');
                                         }
@@ -268,7 +288,7 @@ final class FlynnDumpParser
                                     if (! is_array($slot)) {
                                         $this->invalid('reagent slot must be an object.');
                                     }
-                                    $index = $this->integer($slot['slotIndex'] ?? null, 0, 9_007_199_254_740_991, 'slotIndex');
+                                    $index = $this->integer($slot['slotIndex'] ?? null, 0, 4_294_967_295, 'slotIndex');
                                     if (isset($indices[$index])) {
                                         $this->invalid('reagent slot indices must be unique.');
                                     }
@@ -292,6 +312,60 @@ final class FlynnDumpParser
                 }
             }
         }
+
+        if ($characterCount === 0) {
+            throw new InvalidArgumentException('invalid_payload: No character records were found. Capture and export at least one tracked character before importing.');
+        }
+
+        return $this->normalizeDocument($document);
+    }
+
+    private function normalizeDocument(array $document): array
+    {
+        foreach ($document['characters'] as $flavor => &$regions) {
+            foreach ($regions as $region => &$realms) {
+                foreach ($realms as $realm => &$records) {
+                    foreach ($records as &$character) {
+                        foreach ($character['professions'] as &$profession) {
+                            foreach ($profession['recipes'] as &$recipe) {
+                                if (isset($recipe['reagentSlots'])) {
+                                    foreach ($recipe['reagentSlots'] as &$slot) {
+                                        $uniqueOptions = [];
+                                        $seenItemIds = [];
+                                        foreach ($slot['options'] as $option) {
+                                            if (isset($seenItemIds[$option['itemID']])) {
+                                                continue;
+                                            }
+                                            $seenItemIds[$option['itemID']] = true;
+                                            $uniqueOptions[] = $option;
+                                        }
+                                        $slot['options'] = $uniqueOptions;
+                                    }
+                                    unset($slot);
+                                }
+                            }
+                            unset($recipe);
+                        }
+                        unset($profession);
+                    }
+                    unset($character);
+                    if ($records === []) {
+                        unset($realms[$realm]);
+                    }
+                }
+                unset($records);
+                if ($realms === []) {
+                    unset($regions[$region]);
+                }
+            }
+            unset($realms);
+            if ($regions === []) {
+                unset($document['characters'][$flavor]);
+            }
+        }
+        unset($regions);
+
+        return $document;
     }
 
     private function assertName(mixed $value, int $max, string $field): void
@@ -380,8 +454,7 @@ final class FlynnLiteralParser
         if ($this->consumeIdentifier('false')) {
             return false;
         }
-        $remaining = substr($this->source, $this->position);
-        if (preg_match('/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/', $remaining, $match)) {
+        if (preg_match('/\G-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/', $this->source, $match, 0, $this->position)) {
             $this->position += strlen($match[0]);
             $number = strpbrk($match[0], '.eE') === false ? filter_var($match[0], FILTER_VALIDATE_INT) : (float) $match[0];
             if ($number === false || (is_float($number) && ! is_finite($number))) {
@@ -397,6 +470,8 @@ final class FlynnLiteralParser
     {
         $this->expect('{');
         $entries = [];
+        $seenKeys = [];
+        $entryType = null;
         $nextIndex = 1;
         while (true) {
             $this->space();
@@ -411,7 +486,7 @@ final class FlynnLiteralParser
                 $this->fail('Maximum entry count exceeded.');
             }
             $key = null;
-            $valueStart = $this->position;
+            $keyType = null;
             if ($this->peek() === '[') {
                 $this->position++;
                 $this->space();
@@ -419,6 +494,7 @@ final class FlynnLiteralParser
                 if (! is_string($key) && (! is_int($key) || $key < 1)) {
                     $this->fail('Table keys must be strings or positive integer indices.');
                 }
+                $keyType = is_int($key) ? 'integer' : 'string';
                 $this->space();
                 $this->expect(']');
                 $this->space();
@@ -427,10 +503,17 @@ final class FlynnLiteralParser
             } else {
                 $value = $this->value($depth);
                 $key = $nextIndex++;
+                $keyType = 'integer';
             }
-            if (array_key_exists($key, $entries)) {
+            if ($entries !== [] && $keyType !== $entryType) {
+                $this->fail('Tables may not mix indexed and named keys.');
+            }
+            $entryType ??= $keyType;
+            $identity = $keyType === 'integer' ? 'i:'.$key : 's:'.strlen($key).':'.$key;
+            if (isset($seenKeys[$identity])) {
                 $this->fail('Duplicate table key.');
             }
+            $seenKeys[$identity] = true;
             $entries[$key] = $value;
             $this->space();
             if ($this->peek() === ',') {
@@ -447,15 +530,9 @@ final class FlynnLiteralParser
                 $this->fail('Expected comma or table terminator.');
             }
         }
-        $keys = array_keys($entries);
-        $integerKeys = array_filter($keys, 'is_int');
-        $stringKeys = array_filter($keys, 'is_string');
-        if ($integerKeys !== [] && $stringKeys !== []) {
-            $this->fail('Tables may not mix indexed and named keys.');
-        }
-        if ($integerKeys !== []) {
-            sort($integerKeys);
-            if ($integerKeys !== range(1, count($integerKeys))) {
+        if (($entryType ?? null) === 'integer') {
+            ksort($entries, SORT_NUMERIC);
+            if (array_keys($entries) !== range(1, count($entries))) {
                 $this->fail('Integer-indexed arrays must be contiguous and start at 1.');
             }
 
@@ -499,6 +576,16 @@ final class FlynnLiteralParser
             }
             if ($escape === "\n") {
                 $result .= "\n";
+
+                continue;
+            }
+            if ($escape === 'x') {
+                $hex = substr($this->source, $this->position, 2);
+                if (strlen($hex) !== 2 || preg_match('/^[0-9A-Fa-f]{2}$/D', $hex) !== 1) {
+                    $this->fail('Hexadecimal string escape must contain exactly two hex digits.');
+                }
+                $this->position += 2;
+                $result .= chr(hexdec($hex));
 
                 continue;
             }
@@ -638,7 +725,7 @@ final class FlynnJsonParser
                 return $value;
             }
         }
-        if (preg_match('/-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/', substr($this->source, $this->position), $match)) {
+        if (preg_match('/\G-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/', $this->source, $match, 0, $this->position)) {
             $this->position += strlen($match[0]);
             $number = strpbrk($match[0], '.eE') === false ? filter_var($match[0], FILTER_VALIDATE_INT) : (float) $match[0];
             if ($number === false || (is_float($number) && ! is_finite($number))) {
