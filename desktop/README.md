@@ -2,6 +2,8 @@
 
 Flynn Desktop is a Tauri 2 + React/TypeScript companion for syncing the Flynn WoW addon's `Flynn.lua` SavedVariables file to the Flynn API. The native process owns filesystem access, API requests, PKCE exchange, and credentials; the webview never receives or persists the bearer token.
 
+The shared [`docs/data-contract.md`](../docs/data-contract.md) is the source of truth for the export/import formats and data schema consumed by the desktop app and other Flynn components.
+
 ## Requirements and setup
 
 - Rust stable and the platform prerequisites listed by [Tauri](https://v2.tauri.app/start/prerequisites/).

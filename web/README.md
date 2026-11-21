@@ -2,6 +2,8 @@
 
 Laravel API and React + TypeScript web application for Flynn accounts, guilds, character data, and crafting requests.
 
+The shared [data contract](../docs/data-contract.md) is the source of truth for `Flynn.lua`, `FLYNN1:`, JSON imports, and the character/profession/recipe fields accepted by this API.
+
 ## Local development
 
 Prerequisites: PHP 8.5, Composer, Node.js/npm, PostgreSQL 18, and `just` (see the repository's `docs/development.md`). From the repository root:

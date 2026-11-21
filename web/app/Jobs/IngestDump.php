@@ -167,7 +167,12 @@ final class IngestDump implements ShouldQueue
             foreach ($recipe['reagentSlots'] ?? [] as $slot) {
                 $slotId = (string) Str::uuid();
                 DB::table('recipe_reagent_slots')->insert(['id' => $slotId, 'recipe_id' => $recipeId, 'slot_index' => $slot['slotIndex'], 'kind' => $slot['kind'], 'quantity' => $slot['quantity'], 'created_at' => now(), 'updated_at' => now()]);
+                $seenOptionItemIds = [];
                 foreach ($slot['options'] as $option) {
+                    if (isset($seenOptionItemIds[$option['itemID']])) {
+                        continue;
+                    }
+                    $seenOptionItemIds[$option['itemID']] = true;
                     DB::table('recipe_slot_options')->insert(['id' => (string) Str::uuid(), 'slot_id' => $slotId, 'item_id' => $option['itemID'], 'created_at' => now(), 'updated_at' => now()]);
                 }
             }

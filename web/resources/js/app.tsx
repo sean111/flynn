@@ -64,7 +64,7 @@ function Button({ children, kind = 'primary', ...props }: React.ButtonHTMLAttrib
 
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`panel rounded-2xl p-5 md:p-6 ${className}`}>{children}</section>; }
 function Title({ eyebrow, children, note }: { eyebrow?: string; children: React.ReactNode; note?: string }) { return <div className="mb-6"><div className="mb-2 text-[10px] font-bold uppercase tracking-[.25em] text-[#c39a5d]">{eyebrow ?? 'Flynn · Guild Ledger'}</div><h1 className="text-3xl font-semibold tracking-tight text-stone-100">{children}</h1>{note && <p className="mt-2 max-w-2xl text-sm text-stone-400">{note}</p>}</div>; }
-function Notice({ error, success }: { error?: string; success?: string }) { if (!error && !success) return null; return <div role="status" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${error ? 'border-rose-900/70 bg-rose-950/30 text-rose-200' : 'border-emerald-900/70 bg-emerald-950/30 text-emerald-200'}`}>{error ?? success}</div>; }
+function Notice({ error, success }: { error?: string; success?: string }) { if (!error && !success) return null; return <div role="status" className={`mb-4 rounded-xl border px-4 py-3 text-sm ${error ? 'border-rose-900/70 bg-rose-950/30 text-rose-200' : 'border-emerald-900/70 bg-emerald-950/30 text-emerald-200'}`}>{error || success}</div>; }
 function Field({ label, error, id, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
     const inputId = id ?? label.toLowerCase().replace(/\s+/g, '-');
     const errorId = error ? `${inputId}-error` : undefined;
@@ -232,39 +232,93 @@ function GuildsPage() {
     </>;
 }
 
-function CharactersPage() {
+function hasLeadingFlynnAssignment(source: string): boolean {
+    let position = 0;
+    const skipWhitespaceAndComments = () => {
+        while (position < source.length) {
+            while (/\s/.test(source[position] ?? '')) position++;
+            if (!source.startsWith('--', position)) return;
+
+            const blockComment = /^--\[(=*)\[/.exec(source.slice(position));
+            if (blockComment) {
+                const closing = `]${blockComment[1]}]`;
+                const end = source.indexOf(closing, position + blockComment[0].length);
+                if (end < 0) {
+                    position = source.length;
+                    return;
+                }
+                position = end + closing.length;
+            } else {
+                const newline = source.indexOf('\n', position + 2);
+                position = newline < 0 ? source.length : newline + 1;
+            }
+        }
+    };
+
+    skipWhitespaceAndComments();
+    if (!source.startsWith('FlynnDB', position) || /[A-Za-z0-9_]/.test(source[position + 7] ?? '')) return false;
+    position += 'FlynnDB'.length;
+    skipWhitespaceAndComments();
+    return source[position] === '=';
+}
+
+export function CharactersPage() {
     const client = useQueryClient();
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [exportString, setExportString] = useState('');
     const [dumpId, setDumpId] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const submissionId = useRef(0);
+    const submittingRef = useRef(false);
     const [selectedGuild, setSelectedGuild] = useState<Record<string, string>>({});
     const characters = useQuery({ queryKey: ['characters'], queryFn: () => api<CursorList<Character>>('/characters') });
     const guilds = useQuery({ queryKey: ['guilds'], queryFn: () => api<CursorList<Guild>>('/guilds') });
     const approvedGuilds = guilds.data?.filter((guild) => guild.membershipStatus === 'approved') ?? [];
     const dump = useQuery({
         queryKey: ['dump', dumpId],
-        queryFn: () => api<{ status: string; charactersUpdated: number; results: { status: string; identity: string; message: string }[] }>(`/dumps/${dumpId}`),
+        queryFn: () => api<{ status: string; error: { code: string; message: string } | null; charactersSeen: number; charactersUpdated: number; results: { status: string; identity: string; message: string }[] }>(`/dumps/${dumpId}`),
         enabled: !!dumpId,
         refetchInterval: (query) => query.state.data?.status === 'queued' || query.state.data?.status === 'processing' ? 2000 : false,
     });
     useEffect(() => {
         if (dump.data?.status === 'completed') void client.invalidateQueries({ queryKey: ['characters'] });
     }, [dump.data?.status, client]);
-    const uploadFile = async (file: File) => {
-        setError(''); setSuccess('');
-        const body = new FormData(); body.append('file', file);
+    const submitImport = async (body: FormData | string, clearTextOnAccepted = false) => {
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        const requestId = ++submissionId.current;
+        setIsSubmitting(true);
+        setError('');
+        setSuccess('');
+        setDumpId('');
         try {
             const result = await api<{ dumpId: string }>('/dumps', { method: 'POST', body });
-            setDumpId(result.dumpId); setSuccess('Upload received. Flynn is safely processing the data.');
-        } catch (exception) { setError(exception instanceof ApiError ? exception.message : 'Upload failed.'); }
+            if (requestId !== submissionId.current) return;
+            setDumpId(result.dumpId);
+            setSuccess('Upload received. Flynn is safely processing the data.');
+            if (clearTextOnAccepted) setExportString('');
+        } catch (exception) {
+            if (requestId === submissionId.current) setError(exception instanceof ApiError ? exception.message : 'Upload failed.');
+        } finally {
+            if (requestId === submissionId.current) {
+                submittingRef.current = false;
+                setIsSubmitting(false);
+            }
+        }
+    };
+    const uploadFile = async (file: File, clearTextOnAccepted = false) => {
+        const body = new FormData();
+        body.append('file', file);
+        await submitImport(body, clearTextOnAccepted);
     };
     const uploadString = async () => {
-        setError('');
-        try {
-            const result = await api<{ dumpId: string }>('/dumps', { method: 'POST', body: JSON.stringify({ format: 'exportString', payload: exportString.trim() }) });
-            setDumpId(result.dumpId); setExportString(''); setSuccess('Export received and queued for processing.');
-        } catch (exception) { setError(exception instanceof ApiError ? exception.message : 'Upload failed.'); }
+        const payload = exportString.trim();
+        if (hasLeadingFlynnAssignment(payload)) {
+            await uploadFile(new File([payload], 'Flynn.lua', { type: 'text/plain' }), true);
+            return;
+        }
+        await submitImport(JSON.stringify({ format: 'exportString', payload }), true);
     };
     const claim = useMutation({
         mutationFn: (id: string) => api(`/characters/${id}/claim`, { method: 'POST', body: '{}' }),
@@ -283,21 +337,21 @@ function CharactersPage() {
     });
 
     return <>
-        <Title note="Import after /reload or logout so WoW has written the latest SavedVariables. Unclaimed imports are yours to explicitly claim.">Character roster</Title>
-        <Notice error={error || (dump.data?.status === 'failed' ? 'Import could not be processed. Check your file/export and try again.' : '')} success={success || (dump.data?.status === 'completed' ? `Import complete. ${dump.data.charactersUpdated} character snapshot(s) updated.` : '')} />
+        <Title note="Import after /reload, logout, or exiting WoW so the latest SavedVariables are written. Unclaimed imports are yours to explicitly claim.">Character roster</Title>
+        <Notice error={error || (dump.isError ? (dump.error instanceof Error ? dump.error.message : 'Could not check import status.') : '') || (dump.data?.status === 'failed' ? `${dump.data.error?.message ?? 'Import could not be processed. Check your file/export and try again.'} (Dump ID: ${dumpId})` : '')} success={dump.data?.status === 'completed' ? `Import complete. ${dump.data.charactersUpdated} character snapshot(s) updated.` : dump.data?.status === 'failed' ? '' : success} />
         <div className="grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
             <Card>
                 <div className="mb-4 text-2xl text-[#d2aa6c]">⇧</div>
                 <h2 className="text-lg font-semibold">Sync your Flynn export</h2>
                 <p className="mb-5 mt-1 text-xs leading-5 text-stone-500">SavedVariables files are parsed as data; no Lua code is executed. Imports remain private to your account.</p>
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#c39a5d]/30 bg-[#c39a5d]/[.04] px-4 py-8 text-center hover:bg-[#c39a5d]/[.08]">
-                    <span className="text-sm font-medium">Choose Flynn.lua</span><span className="mt-1 text-xs text-stone-600">Maximum file size 10 MiB</span>
-                    <input type="file" accept=".lua,text/plain" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} />
+                    <span className="text-sm font-medium">Choose Flynn.lua</span><span className="mt-1 text-xs text-stone-600">Maximum file size 10 MiB · save with /reload, logout, or exit first</span>
+                    <input type="file" accept=".lua,text/plain" disabled={isSubmitting} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; if (file) void uploadFile(file); }} />
                 </label>
                 <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-widest text-stone-700"><span className="h-px flex-1 bg-white/10" />or paste export<span className="h-px flex-1 bg-white/10" /></div>
-                <textarea value={exportString} onChange={(event) => setExportString(event.target.value)} rows={4} placeholder="FLYNN1:…" className="w-full resize-y rounded-xl border border-white/10 bg-[#151513] p-3 text-xs text-stone-300 outline-none focus:border-[#b68a4e]" />
-                <Button onClick={() => void uploadString()} disabled={!exportString.trim()} className="mt-3 w-full">Import export string →</Button>
-                {dump.data && <div className="mt-4 rounded-xl bg-white/[.035] p-3 text-xs text-stone-400"><div>Import status: <b className="capitalize text-stone-200">{dump.data.status}</b></div>{dump.data.results?.map((row, index) => <p key={`${row.identity}-${index}`} className="mt-2">{row.identity}: {row.message}</p>)}</div>}
+                <textarea value={exportString} onChange={(event) => setExportString(event.target.value)} rows={4} placeholder="Paste a FLYNN1: export string or the complete contents of Flynn.lua" className="w-full resize-y rounded-xl border border-white/10 bg-[#151513] p-3 text-xs text-stone-300 outline-none focus:border-[#b68a4e]" />
+                <Button onClick={() => void uploadString()} disabled={!exportString.trim() || isSubmitting} className="mt-3 w-full">{isSubmitting ? 'Importing…' : 'Import pasted data →'}</Button>
+                {dump.data && <div className="mt-4 rounded-xl bg-white/[.035] p-3 text-xs text-stone-400"><div>Import status: <b className="capitalize text-stone-200">{dump.data.status}</b></div>{dump.data.status === 'failed' && <p className="mt-2">Dump ID: {dumpId}</p>}{dump.data.results?.map((row, index) => <p key={`${row.identity}-${index}`} className="mt-2">{row.identity}: {row.message}</p>)}</div>}
             </Card>
             <Card>
                 <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-semibold">Your characters</h2><p className="mt-1 text-xs text-stone-500">Flavor-aware identities and profession snapshots.</p></div><span className="text-xs text-stone-500">{characters.data?.length ?? '—'} characters</span></div>

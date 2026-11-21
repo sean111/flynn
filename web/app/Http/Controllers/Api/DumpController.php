@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Jobs\IngestDump;
 use App\Support\FlynnDumpParser;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -11,7 +12,7 @@ use Illuminate\Support\Str;
 
 final class DumpController extends ApiController
 {
-    public function store(Request $request, FlynnDumpParser $parser)
+    public function store(Request $request, FlynnDumpParser $parser): JsonResponse
     {
         $user = $request->user();
         if ($request->user()->currentAccessToken() && ! $request->user()->tokenCan('dumps:write')) {
@@ -27,7 +28,23 @@ final class DumpController extends ApiController
             if ($file->getSize() > 10 * 1024 * 1024) {
                 return $this->error('payload_too_large', 'Flynn.lua files are limited to 10 MiB.', 413, ['limitBytes' => 10 * 1024 * 1024]);
             }
-            $payload = file_get_contents($file->getRealPath());
+            $path = $file->getRealPath();
+            if (! is_string($path) || ! is_readable($path)) {
+                return $this->error('invalid_saved_variables', 'Could not read the uploaded file. Verify it came from Flynn and retry after /reload or logout.', 422);
+            }
+            try {
+                $payload = $file->getContent();
+            } catch (\Throwable) {
+                return $this->error('invalid_saved_variables', 'Could not read the uploaded file. Verify it came from Flynn and retry after /reload or logout.', 422);
+            }
+            if (! is_string($payload)) {
+                return $this->error('invalid_saved_variables', 'Could not read the uploaded file. Verify it came from Flynn and retry after /reload or logout.', 422);
+            }
+            try {
+                $parser->parseLua($payload);
+            } catch (\InvalidArgumentException $exception) {
+                return $this->parserError($exception);
+            }
             $format = 'lua';
         } else {
             $raw = $request->getContent();
@@ -83,7 +100,7 @@ final class DumpController extends ApiController
         return $this->ok(['dumpId' => $id, 'status' => 'queued'], 202);
     }
 
-    public function show(Request $request, string $dumpId)
+    public function show(Request $request, string $dumpId): JsonResponse
     {
         $dump = DB::table('dumps')->where('id', $dumpId)->where('uploader_id', $request->user()->id)->first();
         if (! $dump) {
@@ -100,7 +117,7 @@ final class DumpController extends ApiController
         ]);
     }
 
-    private function parserError(\InvalidArgumentException $exception)
+    private function parserError(\InvalidArgumentException $exception): JsonResponse
     {
         [$code, $message] = array_pad(explode(':', $exception->getMessage(), 2), 2, 'The dump could not be parsed.');
         $code = trim($code);

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "characters": {
+    "retail": {
+      "us": {
+        "Example Realm PvE": {
+          "Examplewarlock": {
+            "schemaVersion": 1,
+            "gameFlavor": "retail",
+            "region": "us",
+            "realm": "Example Realm PvE",
+            "characterName": "Examplewarlock",
+            "guid": "Player-0000-00000001",
+            "faction": "alliance",
+            "class": "WARLOCK",
+            "capturedAt": 1794528000,
+            "professions": [
+              { "skillLineID": 185, "currentSkill": 75, "maxSkill": 100, "recipes": [] },
+              {
+                "skillLineID": 197,
+                "currentSkill": 100,
+                "maxSkill": 100,
+                "recipes": [{
+                  "spellID": 376556,
+                  "outputs": [{ "itemID": 193922, "quantity": 1 }],
+                  "reagents": [{ "itemID": 193208, "quantity": 5 }],
+                  "reagentSlots": [
+                    { "slotIndex": 0, "kind": "required", "quantity": 5, "options": [{ "itemID": 193208 }] },
+                    { "slotIndex": 1, "kind": "optional", "quantity": 1, "options": [{ "itemID": 194123 }, { "itemID": 194124 }] }
+                  ]
+                }]
+              },
+              {
+                "skillLineID": 333,
+                "currentSkill": 80,
+                "maxSkill": 100,
+                "recipes": [{
+                  "spellID": 382994,
+                  "outputs": [],
+                  "reagents": [{ "itemID": 190316, "quantity": 2 }],
+                  "reagentSlots": [{ "slotIndex": 0, "kind": "required", "quantity": 2, "options": [{ "itemID": 190316 }] }]
+                }]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "settings": {
+    "tracked": { "retail\u001fus\u001fExample Realm PvE\u001fExamplewarlock": true },
+    "ignored": {},
+    "capturedProfessions": { "retail\u001fus\u001fExample Realm PvE\u001fExamplewarlock": { "complete": true } }
+  }
+}
