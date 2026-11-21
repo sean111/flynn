@@ -37,6 +37,128 @@ final class DumpIngestionTest extends TestCase
         $this->assertDatabaseMissing('characters', ['game_flavor' => 'retail', 'character_name' => 'Anvil']);
     }
 
+    public function test_login_session_authenticates_me_and_export_string_upload_and_status_poll_on_same_host(): void
+    {
+        Storage::fake('local');
+        Queue::fake([IngestDump::class]);
+        $user = User::factory()->create(['email' => 'session-export@example.com', 'password' => 'Correct-Password-892']);
+        $host = 'flynn.test';
+        $origin = 'https://'.$host;
+
+        $loginResponse = $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->postJson($origin.'/api/v1/auth/login', ['email' => $user->email, 'password' => 'Correct-Password-892'])
+            ->assertOk();
+
+        $this->withCookie(config('session.cookie'), $loginResponse->getCookie(config('session.cookie'))->getValue())
+            ->withCredentials();
+        $this->app->forgetInstance('auth');
+        $this->app['session']->forgetDrivers();
+
+        $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->getJson($origin.'/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.email', $user->email);
+        $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
+
+        $this->app['session']->forgetDrivers();
+        $this->app['auth']->forgetGuards();
+
+        $response = $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->postJson($origin.'/api/v1/dumps', [
+                'format' => 'exportString',
+                'payload' => $this->validExportString(),
+            ]);
+
+        $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
+        $response->assertAccepted()->assertJsonPath('data.status', 'queued');
+        $dumpId = $response->json('data.dumpId');
+        $this->assertDatabaseHas('dumps', ['id' => $dumpId, 'uploader_id' => $user->id, 'status' => 'queued']);
+        Queue::assertPushed(IngestDump::class, fn (IngestDump $job): bool => $job->format === 'exportString');
+
+        $this->app['session']->forgetDrivers();
+        $this->app['auth']->forgetGuards();
+
+        $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->getJson($origin.'/api/v1/dumps/'.$dumpId)
+            ->assertOk()
+            ->assertJsonPath('data.dumpId', $dumpId)
+            ->assertJsonPath('data.status', 'queued');
+        $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
+    }
+
+    public function test_guest_cannot_upload_export_string(): void
+    {
+        $this->postJson('/api/v1/dumps', [
+            'format' => 'exportString',
+            'payload' => $this->validExportString(),
+        ])->assertUnauthorized()->assertJsonPath('error.message', 'Authentication is required.');
+    }
+
+    public function test_unlisted_host_with_matching_origin_is_not_stateful_and_cannot_authenticate(): void
+    {
+        $user = User::factory()->create(['email' => 'attacker-origin@example.com', 'password' => 'Correct-Password-892']);
+        $host = 'flynn.test';
+        $origin = 'https://'.$host;
+
+        $loginResponse = $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->postJson($origin.'/api/v1/auth/login', ['email' => $user->email, 'password' => 'Correct-Password-892'])
+            ->assertOk();
+
+        $this->withCookie(config('session.cookie'), $loginResponse->getCookie(config('session.cookie'))->getValue())
+            ->withCredentials();
+        $this->app['auth']->forgetGuards();
+        $this->app['session']->forgetDrivers();
+
+        $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->getJson($origin.'/api/v1/me')
+            ->assertOk()
+            ->assertJsonPath('data.email', $user->email);
+        $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
+
+        $this->app['auth']->guard('web')->logout();
+        $this->app['auth']->forgetGuards();
+        $this->app['session']->forgetDrivers();
+
+        $unlistedHost = 'attacker-controlled.test';
+
+        $response = $this->withServerVariables(['HTTP_HOST' => $unlistedHost])
+            ->withHeader('Origin', 'https://'.$unlistedHost)
+            ->getJson('https://'.$unlistedHost.'/api/v1/me');
+
+        $response->assertUnauthorized();
+
+        $this->assertFalse($this->app['request']->attributes->get('sanctum', false));
+    }
+
+    public function test_authenticated_session_receives_export_validation_error_for_malformed_string(): void
+    {
+        $user = User::factory()->create(['email' => 'invalid-export@example.com', 'password' => 'Correct-Password-892']);
+        $host = 'flynn.test';
+        $origin = 'https://'.$host;
+
+        $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->postJson($origin.'/api/v1/auth/login', ['email' => $user->email, 'password' => 'Correct-Password-892'])
+            ->assertOk();
+
+        $this->app['auth']->forgetGuards();
+
+        $this->withServerVariables(['HTTP_HOST' => $host])
+            ->withHeader('Origin', $origin)
+            ->postJson($origin.'/api/v1/dumps', ['format' => 'exportString', 'payload' => 'not-a-valid-export'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'invalid_export_string');
+
+        $this->assertTrue($this->app['request']->attributes->get('sanctum', false));
+        $this->assertDatabaseCount('dumps', 0);
+    }
+
     public function test_structured_dump_is_staged_then_upserted_with_claim_grants_and_ownership_conflicts(): void
     {
         Storage::fake('local');
@@ -132,6 +254,16 @@ final class DumpIngestionTest extends TestCase
             'gameFlavor' => 'retail', 'region' => 'us', 'realm' => 'Area 52', 'characterName' => $name,
             'guid' => $guid, 'faction' => 'horde', 'class' => 'MAGE', 'capturedAt' => 1794528000, 'professions' => [],
         ];
+    }
+
+    private function validExportString(): string
+    {
+        $document = ['schemaVersion' => 1, 'characters' => ['retail' => ['us' => ['Area 52' => ['Examplemage' => [
+            'gameFlavor' => 'retail', 'region' => 'us', 'realm' => 'Area 52', 'characterName' => 'Examplemage',
+            'guid' => 'Player-3676-0ABCDEF0', 'faction' => 'horde', 'class' => 'MAGE', 'capturedAt' => 1794528000, 'professions' => [],
+        ]]]]]];
+
+        return 'FLYNN1:'.base64_encode(gzdeflate(json_encode($document, JSON_THROW_ON_ERROR)));
     }
 
     private function createNewerCharacter(User $owner): string
